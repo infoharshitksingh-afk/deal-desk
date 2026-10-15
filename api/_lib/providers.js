@@ -40,7 +40,7 @@ async function call(url, opts, name, tries = 3) {
     const text = await r.text();
     let j; try { j = JSON.parse(text); } catch { j = { raw: text }; }
     if (r.ok) return j;
-    const msg = j?.error?.message || j?.error || j?.message || text.slice(0, 200);
+    const msg = j?.error?.message || j?.error || j?.message || (j?.description ? `${j.title ? j.title + ': ' : ''}${j.description}` : '') || text.slice(0, 200);
     const msgStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
     if (r.status === 429) {
       const wait = Math.min(waitFor(r, text) + 1000, 65000);
@@ -91,14 +91,21 @@ export async function theirstackJobs(keys, f, { sinceDate } = {}) {
     job_title_or: f.titles || [], job_title_not: f.titlesNot || [],
     job_description_pattern_or: f.descriptionPatterns || [], job_technology_slug_or: f.technologySlugs || [],
     job_country_code_or: f.countries || [], company_type: 'direct_employer',
-    limit: f.limit || 50, page: 0
   };
   if (sinceDate) body.posted_at_gte = sinceDate; else body.posted_at_max_age_days = f.maxAgeDays ?? 7;
   if (f.minEmployees) body.min_employee_count = Number(f.minEmployees);
   if (f.maxEmployees) body.max_employee_count = Number(f.maxEmployees);
   for (const k of Object.keys(body)) if (Array.isArray(body[k]) && !body[k].length) delete body[k];
-  const j = await call(ENDPOINTS.theirstackJobs, { method: 'POST', headers: { Authorization: `Bearer ${keys.theirstack}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 'TheirStack');
-  return (j.data || []).map(x => ({
+  // Pages of 25: the free plan rejects larger pages, and paid plans are billed per job either way.
+  const want = Math.max(1, Number(f.limit) || 50), PAGE = 25, rows = [];
+  for (let i = 0; rows.length < want && i < 20; i++) {
+    const limit = Math.min(PAGE, want - rows.length);
+    const j = await call(ENDPOINTS.theirstackJobs, { method: 'POST', headers: { Authorization: `Bearer ${keys.theirstack}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, limit, offset: rows.length }) }, 'TheirStack');
+    const got = j.data || [];
+    rows.push(...got);
+    if (got.length < limit) break;
+  }
+  return rows.map(x => ({
     company: x.company || x.company_object?.name || '',
     domain: x.company_domain || x.company_object?.domain || '',
     title: x.job_title || '',
