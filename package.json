@@ -1,0 +1,16 @@
+{
+  "name": "flowgen-deal-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "FlowGen Deal Desk: an outbound agent that sources SAP-hiring companies, researches and scores them, finds competitors and people, drafts and sends emails.",
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "test": "node scripts/e2e-test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "nodemailer": "6.9.16",
+    "xlsx": "0.18.5"
+  }
+}
