@@ -200,12 +200,15 @@ tr:last-child td{border-bottom:0}
         <p class="note">One workbook with five sheets: Accounts, Contacts, Signals, Drafts and Company registry.</p>
         <div class="row-actions"><button class="btn primary" type="button" id="exportBtn">Download Excel</button><span class="small" id="exportMsg"></span></div>
       </div></div>
-      <div class="panel"><div class="panel-h"><h3>One-click import from Tsenta</h3><span class="small faint">or any job board</span></div><div class="panel-b">
-        <p class="note">Drag this button to your browser's bookmarks bar once. Then open your Tsenta recommendations (signed in as usual) and click it. It scrolls to load the list, opens Deal Desk and imports the postings. Claude reads the page; known and excluded companies are skipped. Nothing is stored about your Tsenta login.</p>
-        <div class="row-actions"><a class="btn primary" id="bookmarklet" href="#" title="Drag to your bookmarks bar">Send to Deal Desk</a><span class="small faint">Works on LinkedIn Jobs, Indeed and company career pages too.</span></div>
+      <div class="panel"><div class="panel-h"><h3>Pull from Tsenta with Claude in Chrome</h3></div><div class="panel-b">
+        <p class="note">Opens Tsenta and copies an instruction for Claude in Chrome. Paste it into the Claude side panel, or save it once as a shortcut (for example <b style="font-weight:500">/tsenta</b>) so it's one click after that. Claude reads your recommendations, enters them below and presses Import. The first time, Tsenta asks you to sign in or create an account; Claude stops and lets you do that.</p>
+        <label class="f" for="tsentaUrl">Tsenta page<input id="tsentaUrl" type="url"></label>
+        <div class="row-actions"><button class="btn primary" type="button" id="tsentaBtn">Pull from Tsenta</button><span class="small" id="tsentaMsg"></span></div>
+        <details style="margin-top:10px"><summary class="small faint">Show the instruction</summary><textarea id="tsentaPrompt" rows="9" readonly style="margin-top:8px"></textarea></details>
       </div></div>
       <div class="panel"><div class="panel-h"><h3>Paste a jobs feed</h3></div><div class="panel-b">
         <p class="note">Select all on a job-board page, copy, and paste here. Claude pulls out the hiring companies; known and excluded ones are skipped.</p>
+        <label class="f" for="feedSource">Source<input id="feedSource" placeholder="e.g. Tsenta"></label>
         <label class="f" for="feed">Pasted text<textarea id="feed" rows="6"></textarea></label>
         <div class="row-actions"><button class="btn primary" type="button" id="feedBtn">Import feed</button><span class="small" id="feedMsg"></span></div>
       </div></div>
@@ -333,8 +336,14 @@ async function load(){
   const st = S.data.storage;
   banner(st.persistent ? (st.keysReadable === false ? 'Your saved API keys can\'t be read, usually because ACCESS_CODE changed. Paste them again in Settings.' : '') : 'No database is connected, so keys and accounts can\'t be saved. In Vercel, open Storage, add Upstash Redis, connect it to this project, then redeploy.', true);
   render();
-  if (S.pendingFeed) setTimeout(applyPendingFeed, 0);
+  setTimeout(routeHash, 0);
 }
+function routeHash(){
+  if (!S.data) return;
+  const raw = location.hash.slice(1), h = ({ import: 'data', feed: 'data' })[raw] || raw;
+  if (h && h !== 'gate' && document.getElementById('view-' + h)) setView(h);
+}
+window.addEventListener('hashchange', routeHash);
 function setView(v){
   S.view = v;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.view === v));
@@ -349,6 +358,7 @@ function render(){
   if (S.view === 'people') renderPeople();
   if (S.view === 'registry') renderRegistry();
   if (S.view === 'settings') renderSettings();
+  if (S.view === 'data') renderTsenta();
 }
 const M = () => S.data.model;
 const lab = (list, k) => (list.find(o => o.k === (k || '')) || list[list.length - 1] || {}).label || '';
@@ -616,35 +626,31 @@ $('#exportBtn').onclick = async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 4000); m.className = 'small okline'; m.textContent = 'Downloaded.';
   } catch(e){ m.className = 'small errtxt'; m.textContent = e.message; }
 };
-/* ---------- bookmarklet: a job-board tab opens Deal Desk and posts its page text ---------- */
-let FEED_SOURCE = '';
-(function setupBookmarklet(){
-  const code = `(async()=>{const O=${JSON.stringify(location.origin)};const w=window.open(O+'/#feed','_blank');if(!w){alert('Allow pop-ups for this site, then click again.');return}const sl=ms=>new Promise(r=>setTimeout(r,ms));for(let i=0;i<8;i++){window.scrollTo(0,document.body.scrollHeight);document.querySelectorAll('main,[class*=scroll],[class*=list]').forEach(e=>{e.scrollTop=e.scrollHeight});await sl(700)}const t=((document.querySelector('main')||document.body).innerText||'').slice(0,60000);const msg={type:'dd-feed',text:t,url:location.href,title:document.title};window.addEventListener('message',e=>{if(e.source===w&&e.data==='dd-ready')w.postMessage(msg,O)})})()`;
-  $('#bookmarklet').href = 'javascript:' + encodeURIComponent(code);
-  $('#bookmarklet').onclick = ev => { ev.preventDefault(); const m = $('#feedMsg'); m.className = 'small faint'; m.textContent = 'Drag the button to your bookmarks bar, then click it on the job-board page.'; };
-  if (!window.opener) return;
-  const ping = setInterval(() => { try { window.opener.postMessage('dd-ready', '*'); } catch(e){ clearInterval(ping); } }, 600);
-  setTimeout(() => clearInterval(ping), 120000);
-  window.addEventListener('message', e => {
-    if (e.source !== window.opener || !e.data || e.data.type !== 'dd-feed') return;
-    clearInterval(ping);
-    let host = ''; try { host = new URL(String(e.data.url)).hostname.replace(/^www\./, ''); } catch(_){}
-    S.pendingFeed = { text: String(e.data.text || '').slice(0, 60000), source: /tsenta/i.test(host) ? 'Tsenta' : (host ? host + ' feed' : 'Browser feed') };
-    applyPendingFeed();
-  });
-})();
-function applyPendingFeed(){
-  if (!S.pendingFeed || !S.data) return;
-  const f = S.pendingFeed; S.pendingFeed = null;
-  setView('import'); $('#feed').value = f.text; FEED_SOURCE = f.source;
-  $('#feedMsg').className = 'small muted'; $('#feedMsg').textContent = `Received ${f.text.length.toLocaleString()} characters from ${f.source}.`;
-  $('#feedBtn').click();
+/* ---------- Tsenta via Claude in Chrome ---------- */
+const TSENTA_DEFAULT = 'https://dashboard.tsenta.com/dashboard/recommendations';
+function tsentaUrl(){ return ($('#tsentaUrl').value || '').trim() || (S.data?.settings?.tsentaUrl) || TSENTA_DEFAULT; }
+function tsentaPrompt(){
+  return `Pull new job postings from Tsenta into Deal Desk.
+
+1. Open ${tsentaUrl()}. If Tsenta asks me to sign in or create an account, stop and tell me. I'll do it myself and ask you again.
+2. On the recommendations page, scroll until no more jobs load. For each job, note the company, job title, location and how long ago it was posted. Don't apply to, save or dismiss any job.
+3. Open ${location.origin}/#import (Deal Desk, already signed in on this browser).
+4. In "Paste a jobs feed", type Tsenta in Source, then paste the jobs into Pasted text, one per line: Company — Title — Location — Posted.
+5. Click "Import feed" and tell me the result shown under the button.`;
 }
+function renderTsenta(){ if (!$('#tsentaUrl').value) $('#tsentaUrl').value = S.data?.settings?.tsentaUrl || TSENTA_DEFAULT; $('#tsentaPrompt').value = tsentaPrompt(); }
+$('#tsentaUrl').onchange = async () => { const u = $('#tsentaUrl').value.trim(); $('#tsentaPrompt').value = tsentaPrompt(); try { const r = await api('settings', { settings: { tsentaUrl: u } }); S.data.settings = r.settings; } catch(e){} };
+$('#tsentaBtn').onclick = async () => {
+  const m = $('#tsentaMsg'), text = tsentaPrompt(); $('#tsentaPrompt').value = text;
+  window.open(tsentaUrl(), '_blank', 'noopener');
+  try { await navigator.clipboard.writeText(text); m.className = 'small okline'; m.textContent = 'Tsenta opened and the instruction is copied. Paste it into Claude in Chrome on that tab.'; }
+  catch(e){ m.className = 'small faint'; m.textContent = 'Tsenta opened. Copy the instruction below and paste it into Claude in Chrome.'; $('#tsentaPrompt').closest('details').open = true; $('#tsentaPrompt').select(); }
+};
 $('#feedBtn').onclick = async () => {
-  const m = $('#feedMsg'), t = $('#feed').value.trim();
+  const m = $('#feedMsg'), t = $('#feed').value.trim(), src = $('#feedSource').value.trim();
   if (!t){ m.className = 'small errtxt'; m.textContent = 'Paste the page text first.'; return; }
   m.className = 'small muted'; m.textContent = 'Reading the feed…'; $('#feedBtn').disabled = true;
-  try { const r = await api('accounts', { action:'importFeed', text:t, source: FEED_SOURCE || 'Pasted feed' }); m.className = 'small okline'; m.textContent = `${r.postings} postings from ${FEED_SOURCE || 'the pasted feed'}: ${r.summary} Run the pipeline without sourcing to research them.`; $('#feed').value = ''; FEED_SOURCE = ''; await load(); }
+  try { const r = await api('accounts', { action:'importFeed', text:t, source: src || 'Pasted feed' }); m.className = 'small okline'; m.textContent = `${r.message} Run the pipeline without sourcing to research them.`; $('#feed').value = ''; await load(); }
   catch(e){ m.className = 'small errtxt'; m.textContent = e.message; } finally { $('#feedBtn').disabled = false; }
 };
 $('#addForm').onsubmit = async ev => {

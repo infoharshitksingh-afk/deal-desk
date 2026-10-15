@@ -28,7 +28,9 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('api.anthropic.com')) {
     const p = body.messages[0].content;
     let out;
-    if (p.startsWith('Extract job postings')) out = [
+    if (p.startsWith('Extract job postings') && p.includes('Cash Application Lead')) out = [{ company: 'Bluewater Distribution', title: 'Cash Application Lead', location: 'Dallas', days_ago: 2, vendor: false, relevant: true }, { company: 'Sequoia Capital', title: 'Venture Associate', days_ago: 1, relevant: false }];
+    else if (p.startsWith('Extract job postings') && p.includes('Venture Associate')) out = [{ company: 'Sequoia Capital', title: 'Venture Associate', location: 'Menlo Park', days_ago: 1, vendor: false, relevant: false }];
+    else if (p.startsWith('Extract job postings')) out = [
       { company: 'Acme Flow Controls', title: 'Senior SAP S/4HANA Finance Lead', location: 'Houston, TX', days_ago: 3, url: 'https://boards.greenhouse.io/acmeflow/jobs/1', vendor: false },
       { company: 'Accenture', title: 'SAP Integration Lead', location: '', days_ago: 2, vendor: true },
       { company: 'Northpeak Pharma', title: 'SAP Program Manager', location: 'NJ', days_ago: 5, vendor: false }];

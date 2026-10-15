@@ -59,8 +59,13 @@ r = await api('send', {});
 ok(r.body.sent === 0, 'sent email is never resent');
 
 // feed import + manual add + export
-r = await api('accounts', { action: 'importFeed', text: 'Tsenta page text ...' });
+r = await api('accounts', { action: 'importFeed', text: 'Tsenta page text with recommended SAP roles at several companies' });
 ok(r.status === 200 && r.body.known >= 1, 'pasted feed import dedupes against known companies');
+r = await api('accounts', { action: 'importFeed', source: 'Tsenta', text: 'Recommended for you\nSequoia Capital — Venture Associate — Menlo Park — 1 day ago' });
+ok(r.status === 200 && r.body.relevant === 0 && /none are SAP/.test(r.body.message), 'feed with only unrelated roles explains why nothing was added');
+r = await api('accounts', { action: 'importFeed', source: 'Tsenta', text: 'Bluewater Distribution — Cash Application Lead — Dallas — 2 days ago\nSequoia Capital — Venture Associate — 1 day ago' });
+st = (await api('state')).body;
+ok(r.status === 200 && r.body.relevant === 1 && st.accounts.some(a => a.name === 'Bluewater Distribution' && a.source === 'Tsenta') && !st.accounts.some(a => a.name === 'Sequoia Capital'), 'Tsenta feed imports relevant roles labelled by source and skips the rest');
 r = await api('accounts', { action: 'add', name: 'Gulfline Midstream', domain: 'gulfline.example' });
 ok(r.body.status === 'added', 'manual add works');
 const ex = await fetch(`http://localhost:${port}/api/export?code=test-code`);

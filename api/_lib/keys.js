@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS = {
   roles: ['SAP S/4HANA migration', 'SAP program lead', 'SAP finance transformation', 'SAP FICO lead', 'ERP transformation finance', 'Head of finance transformation'],
   portals: ['boards.greenhouse.io', 'jobs.lever.co', 'myworkdayjobs.com', 'jobs.ashbyhq.com', 'linkedin.com/jobs'],
   recency: 'qdr:w',
+  tsentaUrl: 'https://dashboard.tsenta.com/dashboard/recommendations',
   // TheirStack sourcing (used instead of the Firecrawl job search when its key is set). 1 TheirStack credit per job returned.
   theirstack: {
     titles: ['SAP', 'S/4HANA', 'ERP', 'finance transformation', 'finance systems'],
@@ -103,6 +104,7 @@ export async function saveSettings(patch) {
   for (const k of ['titles', 'titlesNot', 'descriptionPatterns', 'technologySlugs', 'countries']) if (!Array.isArray(ts[k])) ts[k] = cur.theirstack[k];
   ts.countries = ts.countries.map(c => String(c).trim().toUpperCase()).filter(c => /^[A-Z]{2}$/.test(c));
   for (const k of ['minEmployees', 'maxEmployees']) ts[k] = ts[k] === '' || ts[k] == null ? null : Math.max(0, Number(ts[k]) || 0);
+  next.tsentaUrl = /^https:\/\/[^\s]+$/.test(String(next.tsentaUrl || '')) ? String(next.tsentaUrl).slice(0, 300) : cur.tsentaUrl;
   ts.maxAgeDays = Math.max(0, Math.min(90, Number(ts.maxAgeDays) || 7));
   ts.limit = Math.max(1, Math.min(500, Number(ts.limit) || 50));
   for (const k of ['roles', 'portals', 'optOut', 'excludeExtra']) if (!Array.isArray(next[k])) next[k] = cur[k];

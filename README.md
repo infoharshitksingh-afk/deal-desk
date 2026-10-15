@@ -34,9 +34,11 @@ Then open **Settings → Test keys**. It confirms the database is connected and 
 
 Free and Hobby Firecrawl plans allow only a few requests a minute. The app sends Firecrawl calls one at a time, waits out a rate limit and retries, and the Run page pauses for 40 seconds and continues if a limit still gets hit. On a free plan, a full run over many accounts takes a while. Set `FIRECRAWL_GAP_MS` (default 1500) higher to slow it down further.
 
-### One-click import from Tsenta or any job board
+### Pull from Tsenta with Claude in Chrome
 
-**Import and export → One-click import** has a **Send to Deal Desk** button. Drag it to the bookmarks bar once. On a job-board page you're signed in to (Tsenta recommendations, LinkedIn Jobs, a careers page), click it: it scrolls to load the list, opens Deal Desk in a new tab and imports the postings, with Claude reading the page. Your job-board login never leaves your browser. Deal Desk must be signed in on that browser (the access code is remembered after the first sign-in). Allow pop-ups for the job board if the browser blocks the new tab.
+**Import and export → Pull from Tsenta** opens your Tsenta recommendations in a new tab and copies an instruction for Claude in Chrome. Paste it into the Claude side panel, or save it once as a shortcut (for example `/tsenta`) so later pulls are one click. Claude scrolls the recommendations, opens Deal Desk at `/#import`, pastes the jobs with Source set to Tsenta, and presses Import. The first time, Tsenta asks you to sign in or create an account; Claude stops so you can do that yourself. The Tsenta page URL can be changed on the same panel.
+
+Feed imports keep only SAP, ERP, finance-transformation and finance-operations roles, and say how many unrelated roles were skipped.
 
 To start from the accounts already sourced, use **Import and export → Import CSV or JSON** with `deal-desk-seed-accounts.json`.
 

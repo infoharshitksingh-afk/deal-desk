@@ -106,20 +106,21 @@ export async function stageSource() {
     if (errors.length) throw new UserError('Job search failed: ' + errors[0], 502, 'source_failed');
     return { remaining: 0, message: 'Job search found no postings this time.' };
   }
-  const jobs = await extractJobs(keys, settings, results.map(r => `URL: ${r.url}\nTITLE: ${r.title}\nSNIPPET: ${r.description}`).join('\n\n'));
+  const jobs = (await extractJobs(keys, settings, results.map(r => `URL: ${r.url}\nTITLE: ${r.title}\nSNIPPET: ${r.description}`).join('\n\n'))).filter(relevantJob);
   const out = await importJobs(jobs, settings, 'Job portals');
   await pushLog({ stage: 'source', message: `Searched ${queries.length} portals, ${results.length} results, ${jobs.length} postings. ${out.summary}` });
   return { remaining: 0, message: `Searched ${queries.length} job portals: ${jobs.length} postings. ${out.summary}`, ...out, warnings: errors };
 }
 async function extractJobs(keys, settings, text) {
   const prompt = `Extract job postings from these job-board search results (or pasted job-board text). Return a JSON array. Each item: {"company": "hiring company name (from the URL path or title, e.g. boards.greenhouse.io/acme -> Acme)", "title": "job title", "location": "location or empty", "days_ago": number or null, "url": "posting URL or empty", "vendor": true if the hiring company is a consulting firm, systems integrator, SAP partner, staffing or recruiting agency, or a software vendor selling SAP services, else false}.
-Only include real postings for roles related to SAP, ERP or finance transformation. Ignore navigation, filters and match percentages. Use only what the text shows.
+Include EVERY real job posting in the text, and add "relevant": true if the role relates to SAP, ERP, finance systems or finance transformation, or is a finance-operations role FlowGen's agents support (accounts receivable, cash application, collections, credit, order-to-cash, accounts payable, billing, shared services, controller or revenue accounting); otherwise false. Ignore navigation, filters and match percentages. Use only what the text shows.
 
 TEXT:
 ${String(text).slice(0, 60000)}`;
   const arr = await claudeJson(keys, prompt, { model: settings.modelFast, maxTokens: 4000 });
   return Array.isArray(arr) ? arr.filter(j => j && j.company && j.title) : [];
 }
+const relevantJob = j => j.relevant !== false;
 export async function importJobs(jobs, settings, sourceLabel) {
   const byCo = new Map();
   for (const j of jobs) { const c = String(j.company).trim(); if (!byCo.has(c)) byCo.set(c, []); byCo.get(c).push(j); }
@@ -149,11 +150,21 @@ export async function importJobs(jobs, settings, sourceLabel) {
 }
 export async function importFeedText(text, label = 'Pasted feed') {
   const [keys, settings] = await Promise.all([getKeys(), getSettings()]);
-  const jobs = await extractJobs(keys, settings, text);
-  if (!jobs.length) throw new UserError('No job postings were found in that text.');
+  text = String(text || '').trim();
+  if (text.length < 40) throw new UserError('That text is too short to contain job postings. Copy the whole job list and try again.');
+  const all = await extractJobs(keys, settings, text);
+  if (!all.length) throw new UserError(`No job postings were found in ${text.length.toLocaleString()} characters of text. Make sure the job list itself was copied (scroll to load it first), not just the page menu.`, 400, 'no_postings');
+  const jobs = all.filter(relevantJob);
+  const skipped = all.length - jobs.length;
+  if (!jobs.length) {
+    const message = `${label}: found ${all.length} postings, but none are SAP, ERP, finance-transformation or finance-operations roles, so nothing was added.`;
+    await pushLog({ stage: 'import', message });
+    return { postings: all.length, relevant: 0, added: 0, updated: 0, known: 0, excluded: 0, message, summary: 'Nothing relevant.' };
+  }
   const out = await importJobs(jobs, settings, label);
-  await pushLog({ stage: 'import', message: `${label}: ${jobs.length} postings. ${out.summary}` });
-  return { postings: jobs.length, ...out };
+  const message = `${label}: ${all.length} postings, ${jobs.length} relevant${skipped ? ` (${skipped} unrelated roles skipped)` : ''}. ${out.summary}`;
+  await pushLog({ stage: 'import', message });
+  return { postings: all.length, relevant: jobs.length, message, ...out };
 }
 
 /* ---------- stage: research ---------- */
