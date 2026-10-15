@@ -5,6 +5,8 @@ globalThis.__sent = [];
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url), body = opts.body ? JSON.parse(opts.body) : {};
   if (u.includes('api.firecrawl.dev/v2/search')) {
+    globalThis.__fcCalls = (globalThis.__fcCalls || 0) + 1;
+    if (globalThis.__fcCalls === 2) { globalThis.__fc429 = (globalThis.__fc429 || 0) + 1; return json({ success: false, error: 'Rate limit exceeded. Consumed (req/min): 17, Remaining (req/min): 0. please retry after 1s' }, 429); }
     const q = body.query || '';
     if (q.startsWith('site:boards.greenhouse.io')) return json({ success: true, data: { web: [
       { url: 'https://boards.greenhouse.io/acmeflow/jobs/1', title: 'Senior SAP S/4HANA Finance Lead at Acme Flow Controls', description: 'Posted 3 days ago. Lead our S/4HANA migration.' },

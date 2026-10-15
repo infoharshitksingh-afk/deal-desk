@@ -384,6 +384,11 @@ async function runPipeline(skipSource){
         (r.warnings || []).forEach(w => logLine(`${stage}: ${w}`, 'e'));
         if (!r.remaining) break;
       } catch(e){
+        if (e.error === 'rate_limit' && (S.run.waits = (S.run.waits || 0) + 1) <= 8){
+          logLine(`${stage}: rate limit reached, waiting 40 seconds and trying again`, 'e');
+          for (let t = 0; t < 40 && !S.run.stop; t++) await new Promise(r => setTimeout(r, 1000));
+          i--; continue;
+        }
         errors++; logLine(`${stage}: ${e.message || 'failed'}`, 'e');
         if (['missing_key','bad_key','setup'].includes(e.error) || errors > 5) { $('#runMsg').className = 'small errtxt'; $('#runMsg').textContent = 'Run stopped: ' + (e.message || 'error'); break outer; }
         break;

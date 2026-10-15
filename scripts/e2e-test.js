@@ -1,5 +1,5 @@
 // End-to-end test with mocked outside APIs: settings, sourcing, dedupe, research, competitors, people, emails, drafts, send, export.
-process.env.ACCESS_CODE = 'test-code'; process.env.DD_STORE_FILE = '/tmp/dd-e2e.json';
+process.env.ACCESS_CODE = 'test-code'; process.env.DD_STORE_FILE = '/tmp/dd-e2e.json'; process.env.FIRECRAWL_GAP_MS = '0';
 import fs from 'node:fs';
 try { fs.unlinkSync('/tmp/dd-e2e.json'); } catch {}
 await import('./mocks.js');
@@ -23,6 +23,7 @@ let st = (await api('state')).body;
 const names = st.accounts.map(a => a.name).sort();
 ok(names.includes('Acme Flow Controls') && names.includes('Northpeak Pharma'), 'sourced companies added as accounts');
 ok(!names.includes('Accenture'), 'vendor excluded');
+ok(globalThis.__fc429 === 1 && !log.some(l => l.includes('ERROR')), 'Firecrawl rate limit is waited out and retried');
 ok(st.registry.some(x => x.name === 'Accenture' && x.status === 'excluded'), 'excluded company recorded in the registry');
 ok(names.includes('Valvecore Industries'), 'competitor added');
 const acme = st.accounts.find(a => a.name === 'Acme Flow Controls');

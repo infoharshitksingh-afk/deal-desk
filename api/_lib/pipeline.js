@@ -77,12 +77,13 @@ export async function stageSource() {
   const [keys, settings] = await Promise.all([getKeys(), getSettings()]);
   const queries = sourcingQueries(settings);
   if (!queries.length) return { remaining: 0, message: 'No portals or roles set in Settings, so sourcing was skipped.' };
-  const results = [], errors = [];
+  const results = [], errors = []; let firstErr = null;
   await Promise.all(queries.map(async q => {
     try { const r = await fcSearch(keys, q, { limit: 10, tbs: settings.recency || undefined }); for (const x of r.web) results.push({ url: x.url, title: x.title || '', description: x.description || '', query: q }); }
-    catch (e) { errors.push(`${q.split(' ')[0]}: ${e.message}`); }
+    catch (e) { firstErr ||= e; errors.push(`${q.split(' ')[0]}: ${e.message}`); }
   }));
   if (!results.length) {
+    if (['rate_limit', 'missing_key', 'bad_key', 'keys_unreadable'].includes(firstErr?.code)) throw firstErr;
     if (errors.length) throw new UserError('Job search failed: ' + errors[0], 502, 'source_failed');
     return { remaining: 0, message: 'Job search found no postings this time.' };
   }

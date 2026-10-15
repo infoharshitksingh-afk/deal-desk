@@ -18,17 +18,46 @@ function need(key, name, keys) {
   throw new UserError(`${name} isn't set up. Add its API key in Settings (or set it as an environment variable in Vercel and redeploy).`, 400, 'missing_key');
 }
 
-async function call(url, opts, name) {
-  let r;
-  try { r = await fetch(url, opts); } catch (e) { throw new UserError(`${name} couldn't be reached (${e.message}).`, 502, 'unreachable'); }
-  const text = await r.text();
-  let j; try { j = JSON.parse(text); } catch { j = { raw: text }; }
-  if (!r.ok) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Retries stay well inside the 300s function limit; handle() stamps the request start time.
+const elapsed = () => Date.now() - (globalThis.__ddReqStart || Date.now());
+
+// How long a 429 asks us to wait: Retry-After header, "retry after 30s", or "resets at <date>".
+function waitFor(r, text) {
+  const h = Number(r.headers.get('retry-after'));
+  if (h > 0) return h * 1000;
+  const m = text.match(/retry after (\d+)\s*s/i); if (m) return Number(m[1]) * 1000;
+  const d = text.match(/resets at ([^"\\]+?GMT[+-]\d{4})/); if (d) { const t = Date.parse(d[1]) - Date.now(); if (t > 0) return t; }
+  return 20000;
+}
+
+async function call(url, opts, name, tries = 3) {
+  for (let attempt = 1; ; attempt++) {
+    let r;
+    try { r = await fetch(url, opts); } catch (e) { throw new UserError(`${name} couldn't be reached (${e.message}).`, 502, 'unreachable'); }
+    const text = await r.text();
+    let j; try { j = JSON.parse(text); } catch { j = { raw: text }; }
+    if (r.ok) return j;
     const msg = j?.error?.message || j?.error || j?.message || text.slice(0, 200);
-    const code = r.status === 401 || r.status === 403 ? 'bad_key' : r.status === 402 || r.status === 429 ? 'limit' : 'provider_error';
-    throw new UserError(`${name} returned ${r.status}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`, 502, code);
+    const msgStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    if (r.status === 429) {
+      const wait = Math.min(waitFor(r, text) + 1000, 65000);
+      if (attempt < tries && elapsed() + wait < 230000) { await sleep(wait); continue; }
+      throw new UserError(`${name} is rate limited. The run will pause and continue. (${msgStr.slice(0, 120)})`, 429, 'rate_limit');
+    }
+    const code = r.status === 401 || r.status === 403 ? 'bad_key' : r.status === 402 ? 'limit' : 'provider_error';
+    throw new UserError(`${name} returned ${r.status}: ${msgStr}`, 502, code);
   }
-  return j;
+}
+
+// Firecrawl's free and hobby plans allow only a few requests a minute, so its calls go out one at a time
+// with a short gap (FIRECRAWL_GAP_MS, default 1500) instead of in parallel bursts.
+let fcQueue = Promise.resolve();
+const FC_GAP = Number(process.env.FIRECRAWL_GAP_MS ?? 1500);
+function fcCall(url, opts) {
+  const run = fcQueue.then(() => call(url, opts, 'Firecrawl', 4));
+  fcQueue = run.catch(() => {}).then(() => sleep(FC_GAP));
+  return run;
 }
 
 /* ---------- Claude ---------- */
@@ -57,14 +86,14 @@ export async function fcSearch(keys, query, { limit = 8, news = false, tbs } = {
   need(keys.firecrawl, 'Firecrawl', keys);
   const body = { query, limit, sources: news ? [{ type: 'web' }, { type: 'news' }] : [{ type: 'web' }] };
   if (tbs) body.tbs = tbs;
-  const j = await call(ENDPOINTS.firecrawlSearch, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 'Firecrawl');
+  const j = await fcCall(ENDPOINTS.firecrawlSearch, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 'Firecrawl');
   const d = j.data || {};
   if (Array.isArray(d)) return { web: d, news: [] };
   return { web: d.web || [], news: d.news || [] };
 }
 export async function fcScrape(keys, url) {
   need(keys.firecrawl, 'Firecrawl', keys);
-  const j = await call(ENDPOINTS.firecrawlScrape, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }) }, 'Firecrawl');
+  const j = await fcCall(ENDPOINTS.firecrawlScrape, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }) }, 'Firecrawl');
   return j.data?.markdown || j.markdown || '';
 }
 

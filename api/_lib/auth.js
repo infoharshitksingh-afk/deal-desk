@@ -30,6 +30,7 @@ export async function readBody(req) {
 
 export function handle(fn) {
   return async (req, res) => {
+    globalThis.__ddReqStart = Date.now();
     try {
       if (!requireAccess(req, res)) return;
       await fn(req, res);

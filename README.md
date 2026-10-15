@@ -30,6 +30,10 @@ Then open **Settings → Test keys**. It confirms the database is connected and 
 - **ACCESS_CODE changed** after keys were saved. Saved keys are encrypted with it, so paste them again.
 - **Quick workaround:** add `FIRECRAWL_API_KEY` and `ANTHROPIC_API_KEY` as environment variables in Vercel and redeploy. Environment variables always win.
 
+### Firecrawl rate limits
+
+Free and Hobby Firecrawl plans allow only a few requests a minute. The app sends Firecrawl calls one at a time, waits out a rate limit and retries, and the Run page pauses for 40 seconds and continues if a limit still gets hit. On a free plan, a full run over many accounts takes a while. Set `FIRECRAWL_GAP_MS` (default 1500) higher to slow it down further.
+
 To start from the accounts already sourced, use **Import and export → Import CSV or JSON** with `deal-desk-seed-accounts.json`.
 
 ## API keys
