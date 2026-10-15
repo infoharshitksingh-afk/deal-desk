@@ -200,7 +200,8 @@ tr:last-child td{border-bottom:0}
         <p class="note">One workbook with five sheets: Accounts, Contacts, Signals, Drafts and Company registry.</p>
         <div class="row-actions"><button class="btn primary" type="button" id="exportBtn">Download Excel</button><span class="small" id="exportMsg"></span></div>
       </div></div>
-      <div class="panel"><div class="panel-h"><h3>Pull from Tsenta with Claude in Chrome</h3></div><div class="panel-b">
+      <!-- Tsenta via Claude in Chrome: hidden for now; remove "hidden" to bring it back -->
+      <div class="panel" id="tsentaPanel" hidden><div class="panel-h"><h3>Pull from Tsenta with Claude in Chrome</h3></div><div class="panel-b">
         <p class="note">Opens Tsenta and copies an instruction for Claude in Chrome. Paste it into the Claude side panel, or save it once as a shortcut (for example <b style="font-weight:500">/tsenta</b>) so it's one click after that. Claude reads your recommendations, enters them below and presses Import. The first time, Tsenta asks you to sign in or create an account; Claude stops and lets you do that.</p>
         <label class="f" for="tsentaUrl">Tsenta page<input id="tsentaUrl" type="url"></label>
         <div class="row-actions"><button class="btn primary" type="button" id="tsentaBtn">Pull from Tsenta</button><span class="small" id="tsentaMsg"></span></div>

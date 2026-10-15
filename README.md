@@ -34,7 +34,9 @@ Then open **Settings → Test keys**. It confirms the database is connected and 
 
 Free and Hobby Firecrawl plans allow only a few requests a minute. The app sends Firecrawl calls one at a time, waits out a rate limit and retries, and the Run page pauses for 40 seconds and continues if a limit still gets hit. On a free plan, a full run over many accounts takes a while. Set `FIRECRAWL_GAP_MS` (default 1500) higher to slow it down further.
 
-### Pull from Tsenta with Claude in Chrome
+### Pull from Tsenta with Claude in Chrome (hidden for now)
+
+The panel is in `public/index.html` (`id="tsentaPanel"`); remove its `hidden` attribute to turn it back on.
 
 **Import and export → Pull from Tsenta** opens your Tsenta recommendations in a new tab and copies an instruction for Claude in Chrome. Paste it into the Claude side panel, or save it once as a shortcut (for example `/tsenta`) so later pulls are one click. Claude scrolls the recommendations, opens Deal Desk at `/#import`, pastes the jobs with Source set to Tsenta, and presses Import. The first time, Tsenta asks you to sign in or create an account; Claude stops so you can do that yourself. The Tsenta page URL can be changed on the same panel.
 
