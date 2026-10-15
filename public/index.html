@@ -200,6 +200,10 @@ tr:last-child td{border-bottom:0}
         <p class="note">One workbook with five sheets: Accounts, Contacts, Signals, Drafts and Company registry.</p>
         <div class="row-actions"><button class="btn primary" type="button" id="exportBtn">Download Excel</button><span class="small" id="exportMsg"></span></div>
       </div></div>
+      <div class="panel"><div class="panel-h"><h3>One-click import from Tsenta</h3><span class="small faint">or any job board</span></div><div class="panel-b">
+        <p class="note">Drag this button to your browser's bookmarks bar once. Then open your Tsenta recommendations (signed in as usual) and click it. It scrolls to load the list, opens Deal Desk and imports the postings. Claude reads the page; known and excluded companies are skipped. Nothing is stored about your Tsenta login.</p>
+        <div class="row-actions"><a class="btn primary" id="bookmarklet" href="#" title="Drag to your bookmarks bar">Send to Deal Desk</a><span class="small faint">Works on LinkedIn Jobs, Indeed and company career pages too.</span></div>
+      </div></div>
       <div class="panel"><div class="panel-h"><h3>Paste a jobs feed</h3></div><div class="panel-b">
         <p class="note">Select all on a job-board page, copy, and paste here. Claude pulls out the hiring companies; known and excluded ones are skipped.</p>
         <label class="f" for="feed">Pasted text<textarea id="feed" rows="6"></textarea></label>
@@ -329,6 +333,7 @@ async function load(){
   const st = S.data.storage;
   banner(st.persistent ? (st.keysReadable === false ? 'Your saved API keys can\'t be read, usually because ACCESS_CODE changed. Paste them again in Settings.' : '') : 'No database is connected, so keys and accounts can\'t be saved. In Vercel, open Storage, add Upstash Redis, connect it to this project, then redeploy.', true);
   render();
+  if (S.pendingFeed) setTimeout(applyPendingFeed, 0);
 }
 function setView(v){
   S.view = v;
@@ -611,11 +616,35 @@ $('#exportBtn').onclick = async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 4000); m.className = 'small okline'; m.textContent = 'Downloaded.';
   } catch(e){ m.className = 'small errtxt'; m.textContent = e.message; }
 };
+/* ---------- bookmarklet: a job-board tab opens Deal Desk and posts its page text ---------- */
+let FEED_SOURCE = '';
+(function setupBookmarklet(){
+  const code = `(async()=>{const O=${JSON.stringify(location.origin)};const w=window.open(O+'/#feed','_blank');if(!w){alert('Allow pop-ups for this site, then click again.');return}const sl=ms=>new Promise(r=>setTimeout(r,ms));for(let i=0;i<8;i++){window.scrollTo(0,document.body.scrollHeight);document.querySelectorAll('main,[class*=scroll],[class*=list]').forEach(e=>{e.scrollTop=e.scrollHeight});await sl(700)}const t=((document.querySelector('main')||document.body).innerText||'').slice(0,60000);const msg={type:'dd-feed',text:t,url:location.href,title:document.title};window.addEventListener('message',e=>{if(e.source===w&&e.data==='dd-ready')w.postMessage(msg,O)})})()`;
+  $('#bookmarklet').href = 'javascript:' + encodeURIComponent(code);
+  $('#bookmarklet').onclick = ev => { ev.preventDefault(); const m = $('#feedMsg'); m.className = 'small faint'; m.textContent = 'Drag the button to your bookmarks bar, then click it on the job-board page.'; };
+  if (!window.opener) return;
+  const ping = setInterval(() => { try { window.opener.postMessage('dd-ready', '*'); } catch(e){ clearInterval(ping); } }, 600);
+  setTimeout(() => clearInterval(ping), 120000);
+  window.addEventListener('message', e => {
+    if (e.source !== window.opener || !e.data || e.data.type !== 'dd-feed') return;
+    clearInterval(ping);
+    let host = ''; try { host = new URL(String(e.data.url)).hostname.replace(/^www\./, ''); } catch(_){}
+    S.pendingFeed = { text: String(e.data.text || '').slice(0, 60000), source: /tsenta/i.test(host) ? 'Tsenta' : (host ? host + ' feed' : 'Browser feed') };
+    applyPendingFeed();
+  });
+})();
+function applyPendingFeed(){
+  if (!S.pendingFeed || !S.data) return;
+  const f = S.pendingFeed; S.pendingFeed = null;
+  setView('import'); $('#feed').value = f.text; FEED_SOURCE = f.source;
+  $('#feedMsg').className = 'small muted'; $('#feedMsg').textContent = `Received ${f.text.length.toLocaleString()} characters from ${f.source}.`;
+  $('#feedBtn').click();
+}
 $('#feedBtn').onclick = async () => {
   const m = $('#feedMsg'), t = $('#feed').value.trim();
   if (!t){ m.className = 'small errtxt'; m.textContent = 'Paste the page text first.'; return; }
   m.className = 'small muted'; m.textContent = 'Reading the feed…'; $('#feedBtn').disabled = true;
-  try { const r = await api('accounts', { action:'importFeed', text:t }); m.className = 'small okline'; m.textContent = `${r.postings} postings: ${r.summary} Run the pipeline without sourcing to research them.`; $('#feed').value = ''; await load(); }
+  try { const r = await api('accounts', { action:'importFeed', text:t, source: FEED_SOURCE || 'Pasted feed' }); m.className = 'small okline'; m.textContent = `${r.postings} postings from ${FEED_SOURCE || 'the pasted feed'}: ${r.summary} Run the pipeline without sourcing to research them.`; $('#feed').value = ''; FEED_SOURCE = ''; await load(); }
   catch(e){ m.className = 'small errtxt'; m.textContent = e.message; } finally { $('#feedBtn').disabled = false; }
 };
 $('#addForm').onsubmit = async ev => {

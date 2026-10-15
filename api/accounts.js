@@ -35,7 +35,10 @@ export default handle(async (req, res) => {
       }
       return send(res, 200, { ok: true, added, known, excluded });
     }
-    case 'importFeed': return send(res, 200, { ok: true, ...(await importFeedText(String(b.text || ''))) });
+    case 'importFeed': {
+      const label = String(b.source || '').replace(/[^\w .\-]/g, '').trim().slice(0, 40) || 'Pasted feed';
+      return send(res, 200, { ok: true, ...(await importFeedText(String(b.text || '').slice(0, 60000), label)) });
+    }
     case 'update': {
       const patch = Object.fromEntries(EDITABLE.filter(k => k in (b.patch || {})).map(k => [k, b.patch[k]]));
       if (patch.stage && !ICP.stages.includes(patch.stage)) throw new UserError('Unknown stage.');

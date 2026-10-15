@@ -147,12 +147,12 @@ export async function importJobs(jobs, settings, sourceLabel) {
   const summary = `${added} new companies, ${updated} updated, ${known} already known, ${excluded} excluded${capped ? `, ${capped} held back by the per-run limit` : ''}.`;
   return { added, updated, known, excluded, capped, addedNames, excludedNames, summary };
 }
-export async function importFeedText(text) {
+export async function importFeedText(text, label = 'Pasted feed') {
   const [keys, settings] = await Promise.all([getKeys(), getSettings()]);
   const jobs = await extractJobs(keys, settings, text);
   if (!jobs.length) throw new UserError('No job postings were found in that text.');
-  const out = await importJobs(jobs, settings, 'Pasted feed');
-  await pushLog({ stage: 'import', message: `Pasted feed: ${jobs.length} postings. ${out.summary}` });
+  const out = await importJobs(jobs, settings, label);
+  await pushLog({ stage: 'import', message: `${label}: ${jobs.length} postings. ${out.summary}` });
   return { postings: jobs.length, ...out };
 }
 
