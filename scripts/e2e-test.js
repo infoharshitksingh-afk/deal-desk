@@ -23,6 +23,16 @@ let st = (await api('state')).body;
 const names = st.accounts.map(a => a.name).sort();
 ok(names.includes('Acme Flow Controls') && names.includes('Northpeak Pharma'), 'sourced companies added as accounts');
 ok(!names.includes('Accenture'), 'vendor excluded');
+// TheirStack sourcing
+await api('settings', { keys: { theirstack: 'ts-test-KEY1' } });
+let tsr = await api('run', { stage: 'source', used: 0 });
+let tsr2 = await api('run', { stage: 'source', used: 0 });
+let st2 = (await api('state')).body;
+const ridge = st2.accounts.find(a => a.name === 'Ridgeway Chemicals');
+ok(tsr.status === 200 && ridge && ridge.domain === 'ridgewaychem.com' && !st2.accounts.some(a => a.name === 'Deloitte'), 'TheirStack postings add new companies with domain; consultancies excluded');
+ok(globalThis.__tsBodies[0].posted_at_max_age_days === 7 && globalThis.__tsBodies[0].company_type === 'direct_employer' && globalThis.__tsBodies[1].posted_at_gte && !globalThis.__tsBodies[1].posted_at_max_age_days, 'TheirStack second run only asks for jobs since the last run');
+ok(st2.accounts.filter(a => a.name === 'Acme Flow Controls').length === 1, 'TheirStack job at a known company updates it instead of duplicating');
+await api('settings', { keys: { theirstack: null } });
 ok(globalThis.__fc429 === 1 && !log.some(l => l.includes('ERROR')), 'Firecrawl rate limit is waited out and retried');
 ok(st.registry.some(x => x.name === 'Accenture' && x.status === 'excluded'), 'excluded company recorded in the registry');
 ok(names.includes('Valvecore Industries'), 'competitor added');
@@ -33,6 +43,7 @@ ok(acme.contacts.every(c => c.placeholder || c.email), 'emails found');
 ok(acme.contacts.some(c => c.draft), 'drafts written');
 
 // second run: no duplicates
+st = (await api('state')).body;
 const before = st.accounts.length;
 await api('run', { stage: 'source' });
 st = (await api('state')).body;

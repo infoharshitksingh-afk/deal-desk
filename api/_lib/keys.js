@@ -7,6 +7,7 @@ import { get, set } from './store.js';
 export const KEY_FIELDS = {
   anthropic: { env: 'ANTHROPIC_API_KEY', label: 'Anthropic (Claude)' },
   firecrawl: { env: 'FIRECRAWL_API_KEY', label: 'Firecrawl' },
+  theirstack: { env: 'THEIRSTACK_API_KEY', label: 'TheirStack (job postings)' },
   apollo: { env: 'APOLLO_API_KEY', label: 'Apollo.io' },
   hunter: { env: 'HUNTER_API_KEY', label: 'Hunter.io' },
   resend: { env: 'RESEND_API_KEY', label: 'Resend' },
@@ -20,6 +21,18 @@ export const DEFAULT_SETTINGS = {
   roles: ['SAP S/4HANA migration', 'SAP program lead', 'SAP finance transformation', 'SAP FICO lead', 'ERP transformation finance', 'Head of finance transformation'],
   portals: ['boards.greenhouse.io', 'jobs.lever.co', 'myworkdayjobs.com', 'jobs.ashbyhq.com', 'linkedin.com/jobs'],
   recency: 'qdr:w',
+  // TheirStack sourcing (used instead of the Firecrawl job search when its key is set). 1 TheirStack credit per job returned.
+  theirstack: {
+    titles: ['SAP', 'S/4HANA', 'ERP', 'finance transformation', 'finance systems'],
+    titlesNot: ['consultant', 'recruiter', 'intern', 'freelance'],
+    descriptionPatterns: [],
+    technologySlugs: [],
+    countries: ['US', 'CA'],
+    minEmployees: 500,
+    maxEmployees: 20000,
+    maxAgeDays: 7,
+    limit: 50
+  },
   maxNewCompaniesPerRun: 15,
   competitorsPerAccount: 3,
   autoFindEmails: false,
@@ -81,11 +94,17 @@ export async function saveKeys(patch) {
 }
 export async function getSettings() {
   const s = (await get('settings')) || {};
-  return { ...DEFAULT_SETTINGS, ...s, sender: { ...DEFAULT_SETTINGS.sender, ...(s.sender || {}) }, email: { ...DEFAULT_SETTINGS.email, ...(s.email || {}) } };
+  return { ...DEFAULT_SETTINGS, ...s, sender: { ...DEFAULT_SETTINGS.sender, ...(s.sender || {}) }, email: { ...DEFAULT_SETTINGS.email, ...(s.email || {}) }, theirstack: { ...DEFAULT_SETTINGS.theirstack, ...(s.theirstack || {}) } };
 }
 export async function saveSettings(patch) {
   const cur = await getSettings();
-  const next = { ...cur, ...patch, sender: { ...cur.sender, ...(patch.sender || {}) }, email: { ...cur.email, ...(patch.email || {}) } };
+  const next = { ...cur, ...patch, sender: { ...cur.sender, ...(patch.sender || {}) }, email: { ...cur.email, ...(patch.email || {}) }, theirstack: { ...cur.theirstack, ...(patch.theirstack || {}) } };
+  const ts = next.theirstack;
+  for (const k of ['titles', 'titlesNot', 'descriptionPatterns', 'technologySlugs', 'countries']) if (!Array.isArray(ts[k])) ts[k] = cur.theirstack[k];
+  ts.countries = ts.countries.map(c => String(c).trim().toUpperCase()).filter(c => /^[A-Z]{2}$/.test(c));
+  for (const k of ['minEmployees', 'maxEmployees']) ts[k] = ts[k] === '' || ts[k] == null ? null : Math.max(0, Number(ts[k]) || 0);
+  ts.maxAgeDays = Math.max(0, Math.min(90, Number(ts.maxAgeDays) || 7));
+  ts.limit = Math.max(1, Math.min(500, Number(ts.limit) || 50));
   for (const k of ['roles', 'portals', 'optOut', 'excludeExtra']) if (!Array.isArray(next[k])) next[k] = cur[k];
   for (const k of ['maxNewCompaniesPerRun', 'competitorsPerAccount', 'maxEmailLookupsPerRun']) next[k] = Math.max(0, Math.min(100, Number(next[k]) || 0));
   next.email.dailyCap = Math.max(1, Math.min(500, Number(next.email.dailyCap) || 25));

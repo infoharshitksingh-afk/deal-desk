@@ -2,7 +2,7 @@
 
 An outbound agent for founder-led sales. One run:
 
-1. **Sources** new job postings for SAP and finance-transformation roles across job portals (Greenhouse, Lever, Workday, Ashby, LinkedIn Jobs) using Firecrawl.
+1. **Sources** new job postings for SAP and finance-transformation roles. With a TheirStack key it pulls structured postings (title, company, domain, technologies) filtered by title, technology, country and company size, and only fetches jobs posted since the last run. Without it, it searches job portals (Greenhouse, Lever, Workday, Ashby, LinkedIn Jobs) through Firecrawl.
 2. **Checks the company registry**, so a company is never added or researched twice. Consultancies, integrators, staffing firms and SAP vendors are excluded and remembered.
 3. **Researches** each new company (website, careers page, news, SAP landscape) with Firecrawl and Claude, and scores it against the FlowGen ICP (fit and timing, tiers 1–3).
 4. **Finds competitors** of similar scale for strong-fit accounts and adds them to the queue.
@@ -41,7 +41,8 @@ To start from the accounts already sourced, use **Import and export → Import C
 | Service | Used for | Required |
 |---|---|---|
 | Anthropic | Reading job feeds, research, competitors, drafts | Yes |
-| Firecrawl | Job search, website and careers pages, news | Yes |
+| Firecrawl | Website and careers pages, news; job search when TheirStack isn't set | Yes |
+| TheirStack | Job postings for sourcing (1 credit per job returned; capped per run in Settings) | Recommended |
 | Apollo.io | People search and work emails (People Search needs a paid plan) | No |
 | Hunter.io | Work emails when Apollo has none | No |
 | Resend, or Gmail/SMTP | Sending approved emails | Only to send |

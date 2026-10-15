@@ -4,6 +4,13 @@ const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, header
 globalThis.__sent = [];
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url), body = opts.body ? JSON.parse(opts.body) : {};
+  if (u.includes('api.theirstack.com/v1/jobs/search')) {
+    (globalThis.__tsBodies ||= []).push(body);
+    return json({ metadata: {}, data: [
+      { job_title: 'SAP S/4HANA Finance Lead', company: 'Ridgeway Chemicals', company_domain: 'ridgewaychem.com', short_location: 'Houston, TX', final_url: 'https://boards.greenhouse.io/ridgeway/jobs/9', date_posted: new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10), technology_slugs: ['sap-s4hana'], company_object: { employee_count: 2400 } },
+      { job_title: 'ERP Program Manager', company: 'Acme Flow Controls', company_domain: 'acmeflow.com', short_location: 'Houston, TX', url: 'https://x/2', date_posted: new Date().toISOString().slice(0, 10) },
+      { job_title: 'SAP Consultant', company: 'Deloitte', company_domain: 'deloitte.com', url: 'https://x/3' } ] });
+  }
   if (u.includes('api.firecrawl.dev/v2/search')) {
     globalThis.__fcCalls = (globalThis.__fcCalls || 0) + 1;
     if (globalThis.__fcCalls === 2) { globalThis.__fc429 = (globalThis.__fc429 || 0) + 1; return json({ success: false, error: 'Rate limit exceeded. Consumed (req/min): 17, Remaining (req/min): 0. please retry after 1s' }, 429); }

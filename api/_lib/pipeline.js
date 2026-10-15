@@ -2,7 +2,7 @@
 // the browser (or the daily cron) calls stages in order until each reports nothing left.
 import { hgetall, hget, hset, hdel, pushLog } from './store.js';
 import { getKeys, getSettings } from './keys.js';
-import { claude, claudeJson, fcSearch, fcScrape, apolloPeopleSearch, apolloMatch, hunterFind, sendEmail } from './providers.js';
+import { claude, claudeJson, theirstackJobs, fcSearch, fcScrape, apolloPeopleSearch, apolloMatch, hunterFind, sendEmail } from './providers.js';
 import { ICP, EXCLUDE_RE, FORMATS, PERSONAS, DEFAULT_SLOTS, PROOF, slug, normDomain, docId, hostOf, today, score, roleFor, pickFormat } from './icp.js';
 import { UserError } from './auth.js';
 
@@ -73,8 +73,27 @@ function sourcingQueries(settings) {
   const roleExpr = roles.map(r => `"${r}"`).join(' OR ');
   return (settings.portals || []).filter(Boolean).slice(0, 8).map(p => `site:${p} (${roleExpr})`);
 }
+// TheirStack: structured postings, no extraction step. Only fetches jobs posted since the last run so credits aren't spent twice.
+async function sourceTheirStack(keys, settings) {
+  const f = settings.theirstack || {};
+  const last = await hget('meta', 'theirstackLastRun');
+  const jobs = await theirstackJobs(keys, f, { sinceDate: last || undefined });
+  const mapped = jobs.map(j => ({
+    company: j.company, domain: j.domain, title: j.title, location: j.location, url: j.url,
+    days_ago: j.datePosted ? Math.max(0, Math.round((Date.now() - Date.parse(j.datePosted)) / 864e5)) : null,
+    tech: j.tech, vendor: false
+  }));
+  const out = await importJobs(mapped, settings, 'TheirStack');
+  await hset('meta', 'theirstackLastRun', today());
+  const full = jobs.length >= (f.limit || 50);
+  const msg = `TheirStack: ${jobs.length} postings${last ? ' since ' + last : ` from the last ${f.maxAgeDays ?? 7} days`}. ${out.summary}${full ? ' Hit the per-run job limit; raise it in Settings to pull more.' : ''}`;
+  await pushLog({ stage: 'source', message: msg });
+  return { remaining: 0, message: msg, ...out };
+}
+
 export async function stageSource() {
   const [keys, settings] = await Promise.all([getKeys(), getSettings()]);
+  if (keys.theirstack) return sourceTheirStack(keys, settings);
   const queries = sourcingQueries(settings);
   if (!queries.length) return { remaining: 0, message: 'No portals or roles set in Settings, so sourcing was skipped.' };
   const results = [], errors = []; let firstErr = null;
@@ -111,13 +130,15 @@ export async function importJobs(jobs, settings, sourceLabel) {
       type: /s\/?4|\bsap\b|\berp\b|transformation|finance systems|fico/i.test(j.title) ? 's4_job' : 'finance_jobs',
       quote: String(j.title).slice(0, 160) + (j.location ? ` (${String(j.location).slice(0, 60)})` : ''),
       source: 'feed', origin: 'feed', feed: sourceLabel, url: j.url || '',
+      ...(j.tech?.length ? { tech: j.tech } : {}),
       date: (j.days_ago != null && !isNaN(Number(j.days_ago))) ? new Date(Date.now() - Number(j.days_ago) * 864e5).toISOString().slice(0, 10) : today(),
-      why: 'open role'
+      why: j.tech?.length ? 'open role; mentions ' + j.tech.join(', ') : 'open role'
     }));
+    const domain = list.map(j => j.domain).find(Boolean) || '';
     if (list.some(j => j.vendor)) { await register(company, { status: 'excluded', reason: 'Vendor, integrator or staffing firm (from posting)', source: sourceLabel }); excluded++; excludedNames.push(company); continue; }
-    const ex = await findExisting(company, '');
+    const ex = await findExisting(company, domain);
     if (!ex && added >= settings.maxNewCompaniesPerRun) { capped++; continue; }
-    const r = await upsertCompany({ name: company, source: sourceLabel, signals: sigs }, settings);
+    const r = await upsertCompany({ name: company, domain, source: sourceLabel, signals: sigs }, settings);
     if (r.status === 'added') { added++; addedNames.push(company); }
     else if (r.status === 'updated') updated++;
     else if (r.status === 'excluded') { excluded++; excludedNames.push(company); }

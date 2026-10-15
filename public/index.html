@@ -236,6 +236,25 @@ tr:last-child td{border-bottom:0}
       </div></div>
     </div>
     <form class="panel" id="setForm"><div class="panel-h"><h3>Rules</h3></div><div class="panel-b">
+      <div class="note" style="margin-bottom:10px"><b style="font-weight:500">TheirStack sourcing</b> — used when a TheirStack key is set. Each run pulls only jobs posted since the last run.</div>
+      <div class="grid2">
+        <label class="f" for="ts-titles">Job titles containing (one per line; all words, any order)<textarea id="ts-titles" rows="4"></textarea></label>
+        <label class="f" for="ts-not">Skip titles containing<textarea id="ts-not" rows="4"></textarea></label>
+      </div>
+      <div class="grid2">
+        <label class="f" for="ts-tech">Technologies mentioned (TheirStack slugs; Test keys lists SAP ones)<textarea id="ts-tech" rows="2"></textarea></label>
+        <label class="f" for="ts-desc">Description patterns (regex, e.g. (?i)s/?4 ?hana)<textarea id="ts-desc" rows="2"></textarea></label>
+      </div>
+      <div class="grid3">
+        <label class="f" for="ts-countries">Countries (ISO codes)<input id="ts-countries" placeholder="US, CA"></label>
+        <label class="f" for="ts-min">Min employees<input id="ts-min" type="number" min="0"></label>
+        <label class="f" for="ts-max">Max employees<input id="ts-max" type="number" min="0"></label>
+      </div>
+      <div class="grid3">
+        <label class="f" for="ts-age">First run: posted in last N days<input id="ts-age" type="number" min="0" max="90"></label>
+        <label class="f" for="ts-limit">Max jobs per run (credits)<input id="ts-limit" type="number" min="1" max="500"></label>
+      </div>
+      <div class="note" style="margin:6px 0 10px"><b style="font-weight:500">Job-portal search</b> — used through Firecrawl when TheirStack isn't set.</div>
       <label class="f" for="s-roles">Roles to search for (one per line)<textarea id="s-roles" rows="5"></textarea></label>
       <label class="f" for="s-portals">Job portals (one domain per line)<textarea id="s-portals" rows="4"></textarea></label>
       <div class="grid3">
@@ -282,7 +301,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const S = { data:null, sel:null, view:'pipeline', run:null, busy:{}, msgs:{}, confirmDel:null };
 const STAGE_INFO = [
-  ['source','Source','Search job portals for SAP and finance-transformation roles'],
+  ['source','Source','New SAP and finance-transformation postings from TheirStack, or job-portal search'],
   ['research','Research','Website, careers page, news, SAP landscape, score'],
   ['competitors','Competitors','Similar-scale competitors of strong-fit accounts'],
   ['people','People','Champion, finance and IT buyer for Tier 1'],
@@ -340,7 +359,8 @@ function renderPipeline(){
   const k = S.data.keys, s = S.data.settings;
   const items = [
     [k.anthropic.set, 'Anthropic key (needed for every step)'],
-    [k.firecrawl.set, 'Firecrawl key (sourcing and research)'],
+    [k.firecrawl.set, 'Firecrawl key (research; also sourcing if TheirStack is not set)'],
+    [k.theirstack.set, 'TheirStack key (recommended for sourcing; optional)'],
     [k.apollo.set || k.hunter.set, 'Apollo or Hunter key (people and emails; optional, LinkedIn links work without it)'],
     [!!s.sender.name, 'Sender name (needed for drafts)'],
     [s.email.provider !== 'none' && (k.resend.set || k.smtpPass.set) && !!s.sender.fromEmail, 'Email provider and from address (needed to send; optional)']
@@ -628,11 +648,14 @@ $('#fileBtn').onclick = async () => {
 /* ---------- settings ---------- */
 function renderSettings(){
   const k = S.data.keys, s = S.data.settings;
-  const help = { anthropic:'console.anthropic.com → API keys', firecrawl:'firecrawl.dev → API keys', apollo:'Apollo → Settings → Integrations → API (People Search needs a paid plan)', hunter:'hunter.io → API', resend:'resend.com → API keys (verify your sending domain)', smtpPass:'For Gmail: an app password from your Google account', zoominfo:'Coming later', clay:'Coming later', rocketreach:'Coming later' };
+  const help = { anthropic:'console.anthropic.com → API keys', firecrawl:'firecrawl.dev → API keys', theirstack:'app.theirstack.com → Settings → API key. Used for sourcing when set; 1 credit per job returned', apollo:'Apollo → Settings → Integrations → API (People Search needs a paid plan)', hunter:'hunter.io → API', resend:'resend.com → API keys (verify your sending domain)', smtpPass:'For Gmail: an app password from your Google account', zoominfo:'Coming later', clay:'Coming later', rocketreach:'Coming later' };
   $('#keysBody').innerHTML = Object.entries(k).map(([id, v]) => `<div class="keyrow"><div><b style="font-weight:500">${esc(v.label)}</b>${v.placeholder ? ' <span class="chip">placeholder</span>' : ''}<br><span class="small faint">${esc(help[id] || '')}</span></div>
     <input type="password" autocomplete="off" data-key="${id}" placeholder="${v.set ? 'Saved, ending ' + esc(v.last4) : (v.placeholder ? 'Not used yet' : 'Paste key')}" ${v.source === 'environment' || v.placeholder ? 'disabled' : ''} aria-label="${esc(v.label)} key">
     <div class="row-actions">${v.set ? `<span class="chip ok">${v.source === 'environment' ? 'env' : 'set'}</span>${v.source === 'settings' ? `<button class="btn sm k-clear" type="button" data-key="${id}">Remove</button>` : ''}` : '<span class="chip">not set</span>'}</div></div>`).join('');
   $('#keysBody').querySelectorAll('.k-clear').forEach(b => b.onclick = async () => { try { const r = await api('settings', { keys: { [b.dataset.key]: null } }); S.data.keys = r.keys; renderSettings(); } catch(e){} });
+  const ts = s.theirstack || {};
+  $('#ts-titles').value = (ts.titles || []).join('\n'); $('#ts-not').value = (ts.titlesNot || []).join('\n'); $('#ts-tech').value = (ts.technologySlugs || []).join('\n'); $('#ts-desc').value = (ts.descriptionPatterns || []).join('\n');
+  $('#ts-countries').value = (ts.countries || []).join(', '); $('#ts-min').value = ts.minEmployees ?? ''; $('#ts-max').value = ts.maxEmployees ?? ''; $('#ts-age').value = ts.maxAgeDays ?? 7; $('#ts-limit').value = ts.limit ?? 50;
   $('#s-roles').value = s.roles.join('\n'); $('#s-portals').value = s.portals.join('\n'); $('#s-recency').value = s.recency || '';
   $('#s-maxnew').value = s.maxNewCompaniesPerRun; $('#s-comp').value = s.competitorsPerAccount; $('#s-autoemail').checked = !!s.autoFindEmails; $('#s-maxemail').value = s.maxEmailLookupsPerRun; $('#s-autodraft').checked = !!s.autoDraft;
   $('#s-exclude').value = (s.excludeExtra || []).join('\n'); $('#s-name').value = s.sender.name; $('#s-title').value = s.sender.title; $('#s-from').value = s.sender.fromEmail; $('#s-footer').value = s.sender.footer;
@@ -660,7 +683,7 @@ $('#setForm').onsubmit = async ev => {
   ev.preventDefault(); const m = $('#setMsg');
   const from = $('#s-from').value.trim();
   if (from && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(from)){ m.className = 'small errtxt'; m.textContent = 'The from email doesn\'t look right.'; return; }
-  const settings = { roles: lines($('#s-roles').value), portals: lines($('#s-portals').value).map(x => x.replace(/^https?:\/\//, '')), recency: $('#s-recency').value, maxNewCompaniesPerRun: $('#s-maxnew').value, competitorsPerAccount: $('#s-comp').value, autoFindEmails: $('#s-autoemail').checked, maxEmailLookupsPerRun: $('#s-maxemail').value, autoDraft: $('#s-autodraft').checked, excludeExtra: lines($('#s-exclude').value), sender: { name: $('#s-name').value.trim(), title: $('#s-title').value.trim(), fromEmail: from, footer: $('#s-footer').value.trim() }, email: { provider: $('#s-provider').value, dailyCap: $('#s-cap').value, smtpUser: $('#s-smtpuser').value.trim(), smtpHost: $('#s-smtphost').value.trim(), smtpPort: $('#s-smtpport').value }, optOut: lines($('#s-optout').value), modelSmart: $('#s-msmart').value.trim() || 'claude-sonnet-5-5', modelFast: $('#s-mfast').value.trim() || 'claude-haiku-5-5' };
+  const settings = { theirstack: { titles: lines($('#ts-titles').value), titlesNot: lines($('#ts-not').value), technologySlugs: lines($('#ts-tech').value), descriptionPatterns: lines($('#ts-desc').value), countries: $('#ts-countries').value.split(/[\s,]+/).filter(Boolean), minEmployees: $('#ts-min').value, maxEmployees: $('#ts-max').value, maxAgeDays: $('#ts-age').value, limit: $('#ts-limit').value }, roles: lines($('#s-roles').value), portals: lines($('#s-portals').value).map(x => x.replace(/^https?:\/\//, '')), recency: $('#s-recency').value, maxNewCompaniesPerRun: $('#s-maxnew').value, competitorsPerAccount: $('#s-comp').value, autoFindEmails: $('#s-autoemail').checked, maxEmailLookupsPerRun: $('#s-maxemail').value, autoDraft: $('#s-autodraft').checked, excludeExtra: lines($('#s-exclude').value), sender: { name: $('#s-name').value.trim(), title: $('#s-title').value.trim(), fromEmail: from, footer: $('#s-footer').value.trim() }, email: { provider: $('#s-provider').value, dailyCap: $('#s-cap').value, smtpUser: $('#s-smtpuser').value.trim(), smtpHost: $('#s-smtphost').value.trim(), smtpPort: $('#s-smtpport').value }, optOut: lines($('#s-optout').value), modelSmart: $('#s-msmart').value.trim() || 'claude-sonnet-5-5', modelFast: $('#s-mfast').value.trim() || 'claude-haiku-5-5' };
   try { const r = await api('settings', { settings }); S.data.settings = r.settings; m.className = 'small okline'; m.textContent = 'Saved.'; } catch(e){ m.className = 'small errtxt'; m.textContent = e.message; }
 };
 
