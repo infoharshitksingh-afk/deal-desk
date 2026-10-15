@@ -22,6 +22,14 @@ Everything exports to Excel (Accounts, Contacts, Signals, Drafts, Company regist
 5. **Redeploy** so the variables take effect.
 6. Open the site and enter the access code. In **Settings**, paste your API keys and fill in the sender details, then press **Run full pipeline**.
 
+Then open **Settings → Test keys**. It confirms the database is connected and checks every key with a free call.
+
+### If a run says "isn't set up" after you saved a key
+
+- **No database connected.** Without Redis, each Vercel function has its own temporary disk, so the Settings page and the pipeline never see the same saved key. Connect Upstash Redis (step 3) and redeploy. The app now refuses to save until a database is connected, and Test keys shows which storage is in use. Any of these variable names work: `KV_REST_API_URL`/`KV_REST_API_TOKEN`, `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`, the same with a custom prefix, or an Upstash `REDIS_URL`.
+- **ACCESS_CODE changed** after keys were saved. Saved keys are encrypted with it, so paste them again.
+- **Quick workaround:** add `FIRECRAWL_API_KEY` and `ANTHROPIC_API_KEY` as environment variables in Vercel and redeploy. Environment variables always win.
+
 To start from the accounts already sourced, use **Import and export → Import CSV or JSON** with `deal-desk-seed-accounts.json`.
 
 ## API keys

@@ -229,7 +229,7 @@ tr:last-child td{border-bottom:0}
   <div class="split even">
     <div>
       <form class="panel" id="keysForm"><div class="panel-h"><h3>API keys</h3><span class="small faint">your accounts, your credits</span></div><div class="panel-b" id="keysBody"></div>
-        <div class="panel-b" style="border-top:1px solid var(--line)"><div class="row-actions"><button class="btn primary" type="submit">Save keys</button><span class="small" id="keysMsg"></span></div></div>
+        <div class="panel-b" style="border-top:1px solid var(--line)"><div class="row-actions"><button class="btn primary" type="submit">Save keys</button><button class="btn" type="button" id="testKeys">Test keys</button><span class="small" id="keysMsg"></span></div><div id="testOut" class="small" style="margin-top:10px"></div></div>
       </form>
       <div class="panel"><div class="panel-h"><h3>Finding people</h3></div><div class="panel-b">
         <p class="note">LinkedIn and Sales Navigator have no public API for this, so each person slot links to a prefilled LinkedIn search. Apollo fills slots automatically when its key is set and your plan includes People Search. Hunter is used for emails when Apollo has none.</p>
@@ -308,7 +308,7 @@ async function load(){
   S.data = await api('state');
   $('#tabs').hidden = false;
   const st = S.data.storage;
-  banner(st.persistent ? '' : 'No database is connected, so data won\'t be kept between visits. Add Upstash Redis from the Vercel marketplace and redeploy.', true);
+  banner(st.persistent ? (st.keysReadable === false ? 'Your saved API keys can\'t be read, usually because ACCESS_CODE changed. Paste them again in Settings.' : '') : 'No database is connected, so keys and accounts can\'t be saved. In Vercel, open Storage, add Upstash Redis, connect it to this project, then redeploy.', true);
   render();
 }
 function setView(v){
@@ -634,6 +634,16 @@ function renderSettings(){
   $('#s-provider').value = s.email.provider; $('#s-cap').value = s.email.dailyCap; $('#s-smtpuser').value = s.email.smtpUser; $('#s-smtphost').value = s.email.smtpHost; $('#s-smtpport').value = s.email.smtpPort;
   $('#s-optout').value = (s.optOut || []).join('\n'); $('#s-msmart').value = s.modelSmart; $('#s-mfast').value = s.modelFast;
 }
+$('#testKeys').onclick = async () => {
+  const o = $('#testOut'), m = $('#keysMsg'); m.textContent = ''; o.innerHTML = '<span class="faint">Testing…</span>';
+  try {
+    const r = await api('test-keys', {});
+    const names = S.data.keys;
+    const store = r.storage.persistent ? `<div class="okline">Storage: ${r.storage.backend === 'redis' ? 'Redis database connected' : 'local file'}</div>` : '<div class="errtxt">Storage: no database connected. Keys saved here won\'t reach the pipeline. Add Upstash Redis in Vercel and redeploy.</div>';
+    o.innerHTML = store + (r.keysReadable ? '' : '<div class="errtxt">Saved keys can\'t be decrypted (ACCESS_CODE changed?). Paste them again.</div>') +
+      Object.entries(r.results).map(([id, x]) => `<div class="${x.ok ? 'okline' : x.ok === false ? 'errtxt' : 'faint'}">${esc(names[id]?.label || id)}: ${esc(x.message)}</div>`).join('');
+  } catch(e){ o.innerHTML = `<span class="errtxt">${esc(e.message)}</span>`; }
+};
 const lines = v => v.split('\n').map(x => x.trim()).filter(Boolean);
 $('#keysForm').onsubmit = async ev => {
   ev.preventDefault(); const m = $('#keysMsg'), keys = {};

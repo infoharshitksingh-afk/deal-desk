@@ -2,8 +2,26 @@
 // otherwise a JSON file (fine for local use; on Vercel it does not persist, and the UI warns about it).
 import fs from 'node:fs';
 
-const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
-const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+import { UserError } from './auth.js';
+
+// Find the Upstash REST credentials under any of the names Vercel or Upstash use:
+// KV_REST_API_URL, UPSTASH_REDIS_REST_URL, or a custom prefix such as STORAGE_KV_REST_API_URL.
+// Falls back to a rediss://default:TOKEN@host URL (REDIS_URL / KV_URL), which Upstash also serves over REST.
+function findRedis() {
+  const env = process.env;
+  const pick = re => { const k = Object.keys(env).filter(k => re.test(k) && env[k]).sort((a, b) => a.length - b.length)[0]; return k ? env[k] : ''; };
+  let url = pick(/(^|_)(KV_REST_API_URL|REDIS_REST_URL)$/);
+  let token = pick(/(^|_)(KV_REST_API_TOKEN|REDIS_REST_TOKEN)$/);
+  if (!(url && token)) {
+    const raw = pick(/(^|_)(REDIS_URL|KV_URL)$/);
+    try {
+      const u = new URL(raw);
+      if (u.hostname.endsWith('upstash.io') && u.password) { url = 'https://' + u.hostname; token = decodeURIComponent(u.password); }
+    } catch {}
+  }
+  return { url: url.replace(/\/$/, ''), token };
+}
+const { url: URL_, token: TOKEN } = findRedis();
 const FILE = process.env.DD_STORE_FILE || '/tmp/deal-desk-store.json';
 const P = 'dd:';
 
@@ -17,7 +35,11 @@ async function redis(cmd) {
   return j.result;
 }
 function readFile() { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return {}; } }
-function writeFile(d) { fs.writeFileSync(FILE, JSON.stringify(d)); }
+// On Vercel each function has its own /tmp, so a file written by Settings is invisible to Run. Refuse instead of losing data.
+function writeFile(d) {
+  if (process.env.VERCEL) throw new UserError('No database is connected, so nothing can be saved. In Vercel, open Storage, add Upstash Redis, connect it to this project, then redeploy.', 503, 'no_database');
+  fs.writeFileSync(FILE, JSON.stringify(d));
+}
 
 export async function hgetall(key) {
   if (backend() === 'redis') {

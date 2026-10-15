@@ -39,19 +39,23 @@ function encrypt(obj) {
   const data = Buffer.concat([c.update(JSON.stringify(obj), 'utf8'), c.final()]);
   return { iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') };
 }
+let unreadable = false;
 function decrypt(blob) {
+  unreadable = false;
   if (!blob) return {};
   try {
     const d = crypto.createDecipheriv('aes-256-gcm', encKey(), Buffer.from(blob.iv, 'base64'));
     d.setAuthTag(Buffer.from(blob.tag, 'base64'));
     return JSON.parse(Buffer.concat([d.update(Buffer.from(blob.data, 'base64')), d.final()]).toString('utf8'));
-  } catch { return {}; }
+  } catch { unreadable = true; return {}; }
 }
 
 export async function getKeys() {
   const stored = decrypt(await get('keys'));
   const out = {};
   for (const [k, f] of Object.entries(KEY_FIELDS)) out[k] = process.env[f.env] || stored[k] || '';
+  // Lets "isn't set up" errors explain the real cause when saved keys exist but can't be decrypted.
+  Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
   return out;
 }
 export async function keyStatus() {
@@ -63,8 +67,11 @@ export async function keyStatus() {
   }
   return out;
 }
+export async function keysReadable() { decrypt(await get('keys')); return !unreadable;
+}
 export async function saveKeys(patch) {
   const stored = decrypt(await get('keys'));
+  if (unreadable) for (const k of Object.keys(stored)) delete stored[k]; // old blob from a previous ACCESS_CODE: start fresh
   for (const [k, v] of Object.entries(patch || {})) {
     if (!(k in KEY_FIELDS)) continue;
     if (v === null || v === '') delete stored[k];

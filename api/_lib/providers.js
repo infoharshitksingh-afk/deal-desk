@@ -12,7 +12,11 @@ export const ENDPOINTS = {
   resend: 'https://api.resend.com/emails'
 };
 
-function need(key, name) { if (!key) throw new UserError(`${name} isn't set up. Add its API key in Settings.`, 400, 'missing_key'); }
+function need(key, name, keys) {
+  if (key) return;
+  if (keys?._unreadable) throw new UserError(`${name}: the saved keys can't be read, usually because ACCESS_CODE changed after they were saved. Paste the keys again in Settings.`, 400, 'keys_unreadable');
+  throw new UserError(`${name} isn't set up. Add its API key in Settings (or set it as an environment variable in Vercel and redeploy).`, 400, 'missing_key');
+}
 
 async function call(url, opts, name) {
   let r;
@@ -29,7 +33,7 @@ async function call(url, opts, name) {
 
 /* ---------- Claude ---------- */
 export async function claude(keys, prompt, { model, maxTokens = 2500 } = {}) {
-  need(keys.anthropic, 'Anthropic');
+  need(keys.anthropic, 'Anthropic', keys);
   const j = await call(ENDPOINTS.anthropic, {
     method: 'POST',
     headers: { 'x-api-key': keys.anthropic, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -50,7 +54,7 @@ export async function claudeJson(keys, prompt, opts) { return parseJson(await cl
 
 /* ---------- Firecrawl ---------- */
 export async function fcSearch(keys, query, { limit = 8, news = false, tbs } = {}) {
-  need(keys.firecrawl, 'Firecrawl');
+  need(keys.firecrawl, 'Firecrawl', keys);
   const body = { query, limit, sources: news ? [{ type: 'web' }, { type: 'news' }] : [{ type: 'web' }] };
   if (tbs) body.tbs = tbs;
   const j = await call(ENDPOINTS.firecrawlSearch, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 'Firecrawl');
@@ -59,14 +63,14 @@ export async function fcSearch(keys, query, { limit = 8, news = false, tbs } = {
   return { web: d.web || [], news: d.news || [] };
 }
 export async function fcScrape(keys, url) {
-  need(keys.firecrawl, 'Firecrawl');
+  need(keys.firecrawl, 'Firecrawl', keys);
   const j = await call(ENDPOINTS.firecrawlScrape, { method: 'POST', headers: { Authorization: `Bearer ${keys.firecrawl}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }) }, 'Firecrawl');
   return j.data?.markdown || j.markdown || '';
 }
 
 /* ---------- Apollo ---------- */
 export async function apolloPeopleSearch(keys, { domain, titles, perPage = 5 }) {
-  need(keys.apollo, 'Apollo');
+  need(keys.apollo, 'Apollo', keys);
   const j = await call(ENDPOINTS.apolloPeopleSearch, {
     method: 'POST', headers: { 'x-api-key': keys.apollo, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
     body: JSON.stringify({ q_organization_domains_list: [domain], person_titles: titles, person_seniorities: ['director', 'vp', 'head', 'c_suite'], per_page: perPage })
@@ -74,7 +78,7 @@ export async function apolloPeopleSearch(keys, { domain, titles, perPage = 5 }) 
   return (j.people || j.contacts || []).map(p => ({ apolloId: p.id, name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name || '', title: p.title || '', linkedin: p.linkedin_url || '' }));
 }
 export async function apolloMatch(keys, { apolloId, name, domain, company, linkedin }) {
-  need(keys.apollo, 'Apollo');
+  need(keys.apollo, 'Apollo', keys);
   const body = apolloId ? { id: apolloId } : { name, domain, organization_name: company };
   if (linkedin) body.linkedin_url = linkedin;
   const j = await call(ENDPOINTS.apolloPeopleMatch, { method: 'POST', headers: { 'x-api-key': keys.apollo, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }, body: JSON.stringify(body) }, 'Apollo');
@@ -85,7 +89,7 @@ export async function apolloMatch(keys, { apolloId, name, domain, company, linke
 
 /* ---------- Hunter ---------- */
 export async function hunterFind(keys, { name, domain }) {
-  need(keys.hunter, 'Hunter');
+  need(keys.hunter, 'Hunter', keys);
   const [first, ...rest] = String(name).trim().split(/\s+/);
   const q = new URLSearchParams({ domain, first_name: first || '', last_name: rest.join(' '), api_key: keys.hunter });
   const j = await call(`${ENDPOINTS.hunterFinder}?${q}`, { method: 'GET' }, 'Hunter');
@@ -99,12 +103,12 @@ export async function sendEmail(keys, settings, { to, subject, text }) {
   if (!s.fromEmail) throw new UserError('Set a sender email in Settings first.', 400, 'missing_sender');
   const from = s.name ? `${s.name} <${s.fromEmail}>` : s.fromEmail;
   if (e.provider === 'resend') {
-    need(keys.resend, 'Resend');
+    need(keys.resend, 'Resend', keys);
     const j = await call(ENDPOINTS.resend, { method: 'POST', headers: { Authorization: `Bearer ${keys.resend}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, text, reply_to: s.fromEmail }) }, 'Resend');
     return { id: j.id || '' };
   }
   if (e.provider === 'smtp') {
-    need(keys.smtpPass, 'SMTP');
+    need(keys.smtpPass, 'SMTP', keys);
     const nodemailer = (await import('nodemailer')).default;
     const t = nodemailer.createTransport({ host: e.smtpHost, port: Number(e.smtpPort) || 465, secure: Number(e.smtpPort) === 465, auth: { user: e.smtpUser || s.fromEmail, pass: keys.smtpPass } });
     const info = await t.sendMail({ from, to, subject, text, replyTo: s.fromEmail });
