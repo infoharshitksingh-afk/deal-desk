@@ -44,6 +44,18 @@ Feed imports keep only SAP, ERP, finance-transformation and finance-operations r
 
 To start from the accounts already sourced, use **Import and export → Import CSV or JSON** with `deal-desk-seed-accounts.json`.
 
+## Sharing with the team
+
+- `ACCESS_CODE` is the **owner** code. In **Settings → Team access**, the owner sets a separate **team code** (stored hashed) and shares the site link and that code.
+- Everyone signed in sees and works the same data: accounts, people, drafts, the registry and run history. Edits by anyone show up for everyone.
+- The team runs on the owner's API keys but never sees them (not even the last four characters). Only the owner can change keys, daily limits or the team code, or run **Test keys**. The team can change sourcing rules, sender details and sending settings.
+- **Daily limits** (Settings) cap paid calls for everyone: Claude calls, Firecrawl calls, TheirStack jobs, Apollo calls and Hunter calls. When one is reached, runs stop with a clear message until midnight UTC. Today's usage shows on the Run page.
+- To revoke access, press **Turn off team access** or save a new team code.
+
+## Starting data
+
+The accounts already sourced before the live app (17 companies with research and contacts, `api/_lib/seed.js`) load automatically the first time the app opens, deduplicated against anything already there. They load once; deleting them later won't bring them back.
+
 ## API keys
 
 | Service | Used for | Required |

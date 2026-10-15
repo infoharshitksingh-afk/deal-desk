@@ -1,5 +1,5 @@
 import { handle, send, readBody, UserError } from './_lib/auth.js';
-import { getAccount, saveAccount, patchAccount, deleteAccount, upsertCompany, researchAccount, findEmailFor, draftFor, importFeedText, withScore } from './_lib/pipeline.js';
+import { getAccount, saveAccount, patchAccount, deleteAccount, upsertCompany, researchAccount, findEmailFor, draftFor, importFeedText, withScore, importRowsData } from './_lib/pipeline.js';
 import { getSettings } from './_lib/keys.js';
 import { roleFor, ICP } from './_lib/icp.js';
 
@@ -18,23 +18,7 @@ export default handle(async (req, res) => {
       const r = await upsertCompany({ name: b.name, domain: b.domain || '', source: 'Added by hand', fields: Object.fromEntries(EDITABLE.filter(k => b[k]).map(k => [k, b[k]])) }, await getSettings());
       return send(res, 200, { ok: true, ...r });
     }
-    case 'importRows': {
-      const settings = await getSettings(); let added = 0, known = 0, excluded = 0;
-      for (const row of (b.rows || []).slice(0, 500)) {
-        const r = await upsertCompany({ name: row.name, domain: row.domain || '', source: row.source || 'Imported', fields: Object.fromEntries(EDITABLE.filter(k => row[k]).map(k => [k, row[k]])) }, settings);
-        if (r.status === 'added') {
-          added++;
-          const extra = {};
-          if (Array.isArray(row.contacts)) extra.contacts = row.contacts;
-          if (row.research) extra.research = row.research;
-          if (Array.isArray(row.importedSignals)) extra.importedSignals = row.importedSignals;
-          for (const k of ['competitorOf', 'competitorsDone', 'peopleDone']) if (row[k] != null) extra[k] = row[k];
-          if (Object.keys(extra).length) { const a = await getAccount(r.id); await saveAccount(r.id, { ...a, ...extra }); }
-        }
-        else if (r.status === 'excluded') excluded++; else known++;
-      }
-      return send(res, 200, { ok: true, added, known, excluded });
-    }
+    case 'importRows': return send(res, 200, { ok: true, ...(await importRowsData(b.rows, await getSettings())) });
     case 'importFeed': {
       const label = String(b.source || '').replace(/[^\w .\-]/g, '').trim().slice(0, 40) || 'Pasted feed';
       return send(res, 200, { ok: true, ...(await importFeedText(String(b.text || '').slice(0, 60000), label)) });

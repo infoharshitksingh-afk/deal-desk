@@ -1,5 +1,5 @@
 // End-to-end test with mocked outside APIs: settings, sourcing, dedupe, research, competitors, people, emails, drafts, send, export.
-process.env.ACCESS_CODE = 'test-code'; process.env.DD_STORE_FILE = '/tmp/dd-e2e.json'; process.env.FIRECRAWL_GAP_MS = '0';
+process.env.ACCESS_CODE = 'test-code'; process.env.DD_STORE_FILE = '/tmp/dd-e2e.json'; process.env.FIRECRAWL_GAP_MS = '0'; process.env.DD_SKIP_SEED = '1';
 import fs from 'node:fs';
 try { fs.unlinkSync('/tmp/dd-e2e.json'); } catch {}
 await import('./mocks.js');
@@ -73,4 +73,36 @@ const buf = Buffer.from(await ex.arrayBuffer());
 ok(ex.status === 200 && buf.slice(0, 2).toString() === 'PK', 'Excel export downloads (' + buf.length + ' bytes)');
 const XLSX = (await import('xlsx')).default; const wb = XLSX.read(buf);
 ok(['Accounts', 'Contacts', 'Signals', 'Drafts', 'Company registry'].every(n => wb.SheetNames.includes(n)), 'workbook has all five sheets');
+
+// ---- team access, limits, starting data ----
+r = await api('settings', { teamCode: 'team-pass-123' });
+ok(r.status === 200 && r.body.teamSet, 'owner sets a team code');
+r = await api('settings', { teamCode: 'test-code' });
+ok(r.status === 400, 'team code must differ from the owner code');
+const T = (p, body) => api(p, body, 'team-pass-123');
+st = (await api('state')).body;
+let ts1 = await T('state');
+ok(ts1.status === 200 && ts1.body.role === 'team' && ts1.body.accounts.length === st.accounts.length, 'team signs in and sees the same accounts');
+ok(Object.values(ts1.body.keys).every(k => !k.last4) && ts1.body.keys.anthropic.set, 'team sees which keys are connected but no key characters');
+ok((await T('settings', { keys: { anthropic: 'sk-evil' } })).status === 403, 'team cannot change API keys');
+ok((await T('settings', { teamCode: 'another-code-1' })).status === 403, 'team cannot change the team code');
+ok((await T('test-keys', {})).status === 403, 'team cannot run key tests');
+await T('settings', { settings: { limits: { anthropic: 99999 }, sender: { title: 'Co-founder' } } });
+let st3 = (await api('state')).body;
+ok(st3.settings.limits.anthropic === 400 && st3.settings.sender.title === 'Co-founder', 'team can edit rules and sender but not limits');
+const acctId = st3.accounts[0].id;
+ok((await T('accounts', { action: 'update', id: acctId, patch: { notes: 'edited by team' } })).status === 200 && (await api('state')).body.accounts.find(a => a.id === acctId).notes === 'edited by team', 'team edits are visible to the owner');
+await api('settings', { settings: { limits: { anthropic: 0 } } });
+r = await T('accounts', { action: 'importFeed', text: 'Bluewater Distribution — Cash Application Lead — Dallas — 2 days ago, more text' });
+ok(r.status === 429 && r.body.error === 'budget', 'daily limit stops paid calls with a clear message');
+await api('settings', { settings: { limits: { anthropic: 400 } } });
+ok(Number((await api('state')).body.usage.anthropic) > 0, 'usage is counted per day');
+ok((await api('state', null, 'wrong-team-code')).status === 401, 'wrong team code is refused');
+await api('settings', { teamCode: null });
+ok((await T('state')).status === 401, 'turning off team access revokes the team code');
+delete process.env.DD_SKIP_SEED;
+let s1 = (await api('state')).body, s2 = (await api('state')).body;
+const seedNames = s1.accounts.map(a => a.name);
+ok(s1.accounts.length >= st3.accounts.length + 10 && s2.accounts.length === s1.accounts.length && new Set(seedNames).size === seedNames.length, `starting accounts load once without duplicates (${s1.accounts.length} accounts)`);
+ok(s1.accounts.filter(a => a.score.tier === '1').length >= 4 && s1.accounts.some(a => (a.contacts || []).some(c => c.email)), 'starting data keeps Tier 1 accounts and contacts');
 srv.close();

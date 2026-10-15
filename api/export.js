@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   // Browser downloads can't send headers, so the access code may come as a query parameter here.
   const code = new URL(req.url, 'http://x').searchParams.get('code');
   if (code && !req.headers['x-access-code']) req.headers['x-access-code'] = code;
-  if (!requireAccess(req, res)) return;
+  if (!(await requireAccess(req, res))) return;
   try {
     const [accounts, registry] = await Promise.all([listAccounts(), listRegistry()]);
     const A = [], C = [], S = [], D = [];

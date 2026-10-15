@@ -1,6 +1,7 @@
 // Thin clients for each outside service, called with the keys from Settings or environment variables.
 // Endpoint paths are kept in one place so they are easy to update if a provider changes its API.
 import { UserError } from './auth.js';
+import { spend, record, remaining } from './keys.js';
 
 export const ENDPOINTS = {
   anthropic: 'https://api.anthropic.com/v1/messages',
@@ -56,7 +57,8 @@ async function call(url, opts, name, tries = 3) {
 // with a short gap (FIRECRAWL_GAP_MS, default 1500) instead of in parallel bursts.
 let fcQueue = Promise.resolve();
 const FC_GAP = Number(process.env.FIRECRAWL_GAP_MS ?? 1500);
-function fcCall(url, opts) {
+async function fcCall(url, opts) {
+  await spend('firecrawl');
   const run = fcQueue.then(() => call(url, opts, 'Firecrawl', 4));
   fcQueue = run.catch(() => {}).then(() => sleep(FC_GAP));
   return run;
@@ -65,6 +67,7 @@ function fcCall(url, opts) {
 /* ---------- Claude ---------- */
 export async function claude(keys, prompt, { model, maxTokens = 2500 } = {}) {
   need(keys.anthropic, 'Anthropic', keys);
+  await spend('anthropic');
   const j = await call(ENDPOINTS.anthropic, {
     method: 'POST',
     headers: { 'x-api-key': keys.anthropic, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -97,12 +100,14 @@ export async function theirstackJobs(keys, f, { sinceDate } = {}) {
   if (f.maxEmployees) body.max_employee_count = Number(f.maxEmployees);
   for (const k of Object.keys(body)) if (Array.isArray(body[k]) && !body[k].length) delete body[k];
   // Pages of 25: the free plan rejects larger pages, and paid plans are billed per job either way.
-  const want = Math.max(1, Number(f.limit) || 50), PAGE = 25, rows = [];
+  const left = await remaining('theirstack');
+  if (left < 1) await spend('theirstack'); // throws the daily-limit message
+  const want = Math.min(Math.max(1, Number(f.limit) || 50), left), PAGE = 25, rows = [];
   for (let i = 0; rows.length < want && i < 20; i++) {
     const limit = Math.min(PAGE, want - rows.length);
     const j = await call(ENDPOINTS.theirstackJobs, { method: 'POST', headers: { Authorization: `Bearer ${keys.theirstack}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, limit, offset: rows.length }) }, 'TheirStack');
     const got = j.data || [];
-    rows.push(...got);
+    rows.push(...got); await record('theirstack', got.length);
     if (got.length < limit) break;
   }
   return rows.map(x => ({
@@ -141,6 +146,7 @@ export async function fcScrape(keys, url) {
 /* ---------- Apollo ---------- */
 export async function apolloPeopleSearch(keys, { domain, titles, perPage = 5 }) {
   need(keys.apollo, 'Apollo', keys);
+  await spend('apollo');
   const j = await call(ENDPOINTS.apolloPeopleSearch, {
     method: 'POST', headers: { 'x-api-key': keys.apollo, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
     body: JSON.stringify({ q_organization_domains_list: [domain], person_titles: titles, person_seniorities: ['director', 'vp', 'head', 'c_suite'], per_page: perPage })
@@ -149,6 +155,7 @@ export async function apolloPeopleSearch(keys, { domain, titles, perPage = 5 }) 
 }
 export async function apolloMatch(keys, { apolloId, name, domain, company, linkedin }) {
   need(keys.apollo, 'Apollo', keys);
+  await spend('apollo');
   const body = apolloId ? { id: apolloId } : { name, domain, organization_name: company };
   if (linkedin) body.linkedin_url = linkedin;
   const j = await call(ENDPOINTS.apolloPeopleMatch, { method: 'POST', headers: { 'x-api-key': keys.apollo, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }, body: JSON.stringify(body) }, 'Apollo');
@@ -160,6 +167,7 @@ export async function apolloMatch(keys, { apolloId, name, domain, company, linke
 /* ---------- Hunter ---------- */
 export async function hunterFind(keys, { name, domain }) {
   need(keys.hunter, 'Hunter', keys);
+  await spend('hunter');
   const [first, ...rest] = String(name).trim().split(/\s+/);
   const q = new URLSearchParams({ domain, first_name: first || '', last_name: rest.join(' '), api_key: keys.hunter });
   const j = await call(`${ENDPOINTS.hunterFinder}?${q}`, { method: 'GET' }, 'Hunter');

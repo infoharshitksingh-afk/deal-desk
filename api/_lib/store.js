@@ -70,6 +70,11 @@ export async function set(key, value) {
   if (backend() === 'redis') return redis(['SET', P + key, JSON.stringify(value)]);
   const d = readFile(); d[P + key] = value; writeFile(d);
 }
+export async function hincr(key, field, by = 1) {
+  if (backend() === 'redis') return Number(await redis(['HINCRBY', P + key, field, String(by)]));
+  const d = readFile(); const h = (d[P + key] ||= {}); h[field] = (Number(h[field]) || 0) + by; writeFile(d); return h[field];
+}
+export async function expire(key, seconds) { if (backend() === 'redis') return redis(['EXPIRE', P + key, String(seconds)]); }
 export async function pushLog(entry, max = 200) {
   const e = { at: new Date().toISOString(), ...entry };
   if (backend() === 'redis') { await redis(['LPUSH', P + 'log', JSON.stringify(e)]); await redis(['LTRIM', P + 'log', '0', String(max - 1)]); return; }

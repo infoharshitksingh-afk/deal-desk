@@ -454,3 +454,31 @@ export async function sendApproved({ id, idx } = {}) {
 }
 
 export const STAGES = { source: stageSource, research: stageResearch, competitors: stageCompetitors, people: stagePeople, emails: stageEmails, drafts: stageDrafts };
+
+/* ---------- bulk import (CSV/JSON rows) and the one-time starting data ---------- */
+const ROW_FIELDS = ['name', 'domain', 'industry', 'revenue', 'geo', 'ownership', 'sapOverride', 'stage', 'careersUrl', 'newsUrl', 'owner', 'notes'];
+export async function importRowsData(rows, settings) {
+  let added = 0, known = 0, excluded = 0;
+  for (const row of (rows || []).slice(0, 500)) {
+    const r = await upsertCompany({ name: row.name, domain: row.domain || '', source: row.source || 'Imported', fields: Object.fromEntries(ROW_FIELDS.filter(k => row[k]).map(k => [k, row[k]])) }, settings);
+    if (r.status === 'added') {
+      added++;
+      const extra = {};
+      if (Array.isArray(row.contacts)) extra.contacts = row.contacts;
+      if (row.research) extra.research = row.research;
+      if (Array.isArray(row.importedSignals)) extra.importedSignals = row.importedSignals;
+      for (const k of ['competitorOf', 'competitorsDone', 'peopleDone']) if (row[k] != null) extra[k] = row[k];
+      if (Object.keys(extra).length) { const a = await getAccount(r.id); await saveAccount(r.id, { ...a, ...extra }); }
+    } else if (r.status === 'excluded') excluded++; else known++;
+  }
+  return { added, known, excluded };
+}
+export async function ensureSeed() {
+  if (process.env.DD_SKIP_SEED) return null;
+  if (await hget('meta', 'seeded')) return null;
+  await hset('meta', 'seeded', now());
+  const rows = (await import('./seed.js')).default;
+  const out = await importRowsData(rows, await getSettings());
+  await pushLog({ stage: 'import', message: `Loaded the starting accounts: ${out.added} added, ${out.known} already here.` });
+  return out;
+}

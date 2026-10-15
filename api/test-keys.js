@@ -1,6 +1,6 @@
 // Checks each configured key with a free, read-only call, and reports the storage backend.
 // Nothing here spends search or email credits.
-import { handle, send } from './_lib/auth.js';
+import { handle, send, ownerOnly } from './_lib/auth.js';
 import { getKeys, getSettings, keysReadable } from './_lib/keys.js';
 import { backend, persistent } from './_lib/store.js';
 
@@ -14,6 +14,7 @@ async function check(url, opts) {
 const msgOf = r => (typeof r.j?.error === 'string' ? r.j.error : r.j?.error?.message) || r.j?.message || r.text || `HTTP ${r.status}`;
 
 export default handle(async (req, res) => {
+  ownerOnly(req);
   const [keys, settings, readable] = await Promise.all([getKeys(), getSettings(), keysReadable()]);
   const out = {};
   const tests = {

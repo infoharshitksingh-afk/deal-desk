@@ -2,7 +2,7 @@
 // where they are encrypted with AES-256-GCM using a key derived from ACCESS_CODE and stored server-side.
 // Keys are never sent back to the browser; the UI only sees which ones are set and their last 4 characters.
 import crypto from 'node:crypto';
-import { get, set } from './store.js';
+import { get, set, hgetall as _hgetall, hincr, expire } from './store.js';
 
 export const KEY_FIELDS = {
   anthropic: { env: 'ANTHROPIC_API_KEY', label: 'Anthropic (Claude)' },
@@ -43,6 +43,8 @@ export const DEFAULT_SETTINGS = {
   modelFast: 'claude-haiku-5-5',
   sender: { name: '', title: '', fromEmail: '', footer: '' },
   email: { provider: 'none', smtpHost: 'smtp.gmail.com', smtpPort: 465, smtpUser: '', dailyCap: 25 },
+  // Daily caps on paid calls, for everyone using the workspace. Owner-only in Settings.
+  limits: { anthropic: 400, firecrawl: 300, theirstack: 100, apollo: 60, hunter: 30 },
   optOut: [],
   excludeExtra: []
 };
@@ -72,12 +74,12 @@ export async function getKeys() {
   Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
   return out;
 }
-export async function keyStatus() {
+export async function keyStatus(role = 'owner') {
   const stored = decrypt(await get('keys'));
   const out = {};
   for (const [k, f] of Object.entries(KEY_FIELDS)) {
     const v = process.env[f.env] || stored[k] || '';
-    out[k] = { label: f.label, set: !!v, source: process.env[f.env] ? 'environment' : (stored[k] ? 'settings' : ''), last4: v ? v.slice(-4) : '', placeholder: !!f.placeholder };
+    out[k] = { label: f.label, set: !!v, source: process.env[f.env] ? 'environment' : (stored[k] ? 'settings' : ''), last4: v && role === 'owner' ? v.slice(-4) : '', placeholder: !!f.placeholder };
   }
   return out;
 }
@@ -95,11 +97,12 @@ export async function saveKeys(patch) {
 }
 export async function getSettings() {
   const s = (await get('settings')) || {};
-  return { ...DEFAULT_SETTINGS, ...s, sender: { ...DEFAULT_SETTINGS.sender, ...(s.sender || {}) }, email: { ...DEFAULT_SETTINGS.email, ...(s.email || {}) }, theirstack: { ...DEFAULT_SETTINGS.theirstack, ...(s.theirstack || {}) } };
+  return { ...DEFAULT_SETTINGS, ...s, sender: { ...DEFAULT_SETTINGS.sender, ...(s.sender || {}) }, email: { ...DEFAULT_SETTINGS.email, ...(s.email || {}) }, theirstack: { ...DEFAULT_SETTINGS.theirstack, ...(s.theirstack || {}) }, limits: { ...DEFAULT_SETTINGS.limits, ...(s.limits || {}) } };
 }
 export async function saveSettings(patch) {
   const cur = await getSettings();
-  const next = { ...cur, ...patch, sender: { ...cur.sender, ...(patch.sender || {}) }, email: { ...cur.email, ...(patch.email || {}) }, theirstack: { ...cur.theirstack, ...(patch.theirstack || {}) } };
+  const next = { ...cur, ...patch, sender: { ...cur.sender, ...(patch.sender || {}) }, email: { ...cur.email, ...(patch.email || {}) }, theirstack: { ...cur.theirstack, ...(patch.theirstack || {}) }, limits: { ...cur.limits, ...(patch.limits || {}) } };
+  for (const k of Object.keys(DEFAULT_SETTINGS.limits)) next.limits[k] = Math.max(0, Math.min(100000, Math.round(Number(next.limits[k]) || 0)));
   const ts = next.theirstack;
   for (const k of ['titles', 'titlesNot', 'descriptionPatterns', 'technologySlugs', 'countries']) if (!Array.isArray(ts[k])) ts[k] = cur.theirstack[k];
   ts.countries = ts.countries.map(c => String(c).trim().toUpperCase()).filter(c => /^[A-Z]{2}$/.test(c));
@@ -113,3 +116,22 @@ export async function saveSettings(patch) {
   await set('settings', next);
   return next;
 }
+
+// Usage counters per day (UTC). spend() checks the cap first so a runaway run stops cleanly.
+const LIMIT_NAMES = { anthropic: 'Claude', firecrawl: 'Firecrawl', theirstack: 'TheirStack', apollo: 'Apollo', hunter: 'Hunter' };
+const dayKey = () => 'usage:' + new Date().toISOString().slice(0, 10);
+export async function usageToday() { return _hgetall(dayKey()); }
+export async function remaining(provider) {
+  const [s, u] = await Promise.all([getSettings(), usageToday()]);
+  return Math.max(0, (s.limits?.[provider] ?? Infinity) - (Number(u[provider]) || 0));
+}
+export async function spend(provider, n = 1) {
+  const left = await remaining(provider);
+  if (left < n) {
+    const { UserError } = await import('./auth.js');
+    throw new UserError(`Today's ${LIMIT_NAMES[provider] || provider} limit is used up. It resets at midnight UTC; the workspace owner can raise it in Settings.`, 429, 'budget');
+  }
+  await hincr(dayKey(), provider, n);
+  expire(dayKey(), 3 * 86400).catch(() => {});
+}
+export async function record(provider, n) { if (n > 0) { await hincr(dayKey(), provider, n); expire(dayKey(), 3 * 86400).catch(() => {}); } }
